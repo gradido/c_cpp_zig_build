@@ -1,0 +1,12 @@
+{
+  "name": "digest-example",
+  "version": "1.0.0",
+  "private": true,
+  "description": "One core C library behind a Node addon, a static library and a CLI",
+  "main": "./index.cjs",
+  "scripts": {
+    "build": "zig-native-build",
+    "test": "node --test",
+    "digest": "zig-native-build --step run --"
+  }
+}

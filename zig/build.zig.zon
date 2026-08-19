@@ -1,0 +1,17 @@
+.{
+    // Consumed as `@import("zig_native_build")` from a project's build.zig.
+    .name = .zig_native_build,
+    .version = "0.1.0",
+    .fingerprint = 0x5e787703b3c3305a,
+    .minimum_zig_version = "0.15.1",
+
+    // Deliberately empty. The template carries its own compile_commands
+    // generator so that a project's dependency list stays its own.
+    .dependencies = .{},
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

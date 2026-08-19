@@ -1,0 +1,11 @@
+{
+  "name": "zstd-addon-example",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A Node addon over zstd, pulled in as a Zig package rather than vendored",
+  "main": "./index.cjs",
+  "scripts": {
+    "build": "zig-native-build",
+    "test": "node --test"
+  }
+}

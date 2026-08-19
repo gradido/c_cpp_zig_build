@@ -1,0 +1,15 @@
+{
+  "name": "matrix-addon-example",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A C++ Node-API addon using node-addon-api, built with zig-native-build",
+  "main": "./index.cjs",
+  "scripts": {
+    "build": "zig-native-build",
+    "build:debug": "zig-native-build --debug",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "node-addon-api": "^8.5.0"
+  }
+}
