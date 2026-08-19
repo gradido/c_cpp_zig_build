@@ -1,4 +1,4 @@
-# zig-native-build
+# c-cpp-zig-build
 
 Build native C/C++ Node.js modules with Zig, without a system toolchain.
 
@@ -8,10 +8,12 @@ Python, no Visual Studio, no `build-essential` — and cross compiling to anothe
 platform is one flag.
 
 ```bash
-npm i -D zig-native-build
-npx zig-native-build init
+npm i -D c-cpp-zig-build
+npx c-cpp-zig-build init
 npm run build
 ```
+
+Apache-2.0 · [Changelog](CHANGELOG.md) · requires Node 18.17+, nothing else
 
 ---
 
@@ -21,6 +23,7 @@ npm run build
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
 - [How it works](#how-it-works)
+- [What is verified](#what-is-verified)
 - [Project layout](#project-layout)
 - [The `build.zig` API](#the-buildzig-api)
 - [Adding dependencies](#adding-dependencies)
@@ -35,6 +38,7 @@ npm run build
 - [Coming from node-gyp](#coming-from-node-gyp)
 - [Troubleshooting](#troubleshooting)
 - [Reference](#reference)
+- [Working on this package](#working-on-this-package)
 
 ---
 
@@ -52,8 +56,10 @@ This package makes that practical:
   on first build and cached in `~/.zig-build`, shared across all your projects.
   `node-addon-api` and `node-api-headers` come along as dependencies, so C++
   bindings and Windows builds work without a project adding anything.
-- **Verified downloads.** Every archive is checked against the SHA-256 published
-  by ziglang.org and nodejs.org before it is unpacked.
+- **Verified downloads.** The Zig archive is checked twice before it is
+  unpacked: against the SHA-256 published by ziglang.org, and against the Zig
+  project's minisign signature using a key pinned in this package. Node headers
+  are checked against nodejs.org's `SHASUMS256.txt`.
 - **A build file you can read.** `build.zig` is usually four lines. The template
   behind it is a normal Zig package, and the artifact it returns is a normal
   `std.Build.Step.Compile`, so nothing is out of reach.
@@ -64,8 +70,10 @@ This package makes that practical:
 - **No lock-in for the C code.** The same sources build as a static library and
   as a command line tool, so the logic stays testable without a JS runtime.
 
-Node-API is deliberately *not* part of this package. The bindings are yours to
-write, in C or in C++ with `node-addon-api`; this only builds them.
+What this package does **not** do is write your bindings. It compiles and links
+them, and it puts the Node-API headers in front of the compiler — but the code
+that turns a JavaScript value into a C one is yours, in C with `node_api.h` or
+in C++ with `node-addon-api`. The [examples](#examples) show both.
 
 ---
 
@@ -81,9 +89,10 @@ write, in C or in C++ with `node-addon-api`; this only builds them.
 No compiler, no Python, no Visual Studio Build Tools.
 
 This package depends on `node-addon-api` and `node-api-headers` and nothing
-else. Both are header-only, carry no dependencies of their own, and together
-add about 300 kB — they are what makes C++ bindings and Windows builds work
-with no setup.
+else. Both are header-only, carry no dependencies of their own, are pinned to
+an exact version, and together add about 300 kB — they are what makes C++
+bindings and Windows builds work with no setup. See
+[What is verified](#what-is-verified).
 
 ---
 
@@ -94,8 +103,8 @@ with no setup.
 ```bash
 mkdir my-native && cd my-native
 npm init -y
-npm i -D zig-native-build
-npx zig-native-build init
+npm i -D c-cpp-zig-build
+npx c-cpp-zig-build init
 npm run build
 ```
 
@@ -116,10 +125,10 @@ wrote. Point `build.zig` at your layout if it differs from the default:
 
 ```zig
 const std = @import("std");
-const znb = @import("zig_native_build");
+const czb = @import("c_cpp_zig_build");
 
 pub fn build(b: *std.Build) !void {
-    _ = try znb.addNodeAddon(b, .{
+    _ = try czb.addNodeAddon(b, .{
         .name = "my_native",
         .sources = &.{ .{ .dir = "lib" }, .{ .dir = "bindings/node" } },
         .include = &.{ "lib/include", "vendor" },
@@ -130,7 +139,7 @@ pub fn build(b: *std.Build) !void {
 ### For C++
 
 ```bash
-npx zig-native-build init --language c++
+npx c-cpp-zig-build init --language c++
 ```
 
 `node-addon-api` ships as a dependency of this package, so `#include <napi.h>`
@@ -144,7 +153,7 @@ against — a version the project declares always wins over the bundled one:
 npm i -D node-addon-api
 ```
 
-`zig-native-build info` prints which copy is in use.
+`c-cpp-zig-build info` prints which copy is in use.
 
 ---
 
@@ -152,7 +161,7 @@ npm i -D node-addon-api
 
 ```
 npm run build
-  └─ zig-native-build
+  └─ c-cpp-zig-build
        ├─ copies the Zig template into .zig-native/          (every build, fast)
        ├─ downloads Zig            → ~/.zig-build/zig/0.15.2/
        ├─ downloads Node headers   → ~/.zig-build/node/v22.11.0/
@@ -184,6 +193,94 @@ manager: npm hoists, pnpm symlinks into a store, Bun has its own layout, and a
 workspace changes all three. A copy inside the project is the same path
 everywhere. It is refreshed on every build, so upgrading the npm package
 upgrades the template — do not edit it.
+
+---
+
+## What is verified
+
+Everything this tool downloads is checked before it is used. Nothing is
+unpacked, and no compiler is run, on bytes that failed a check.
+
+### The Zig toolchain
+
+Two independent checks, and both must pass:
+
+| Check | What it proves | Where the truth comes from |
+|---|---|---|
+| SHA-256 | this is the file ziglang.org listed for this release | `https://ziglang.org/download/index.json`, over TLS |
+| minisign (Ed25519) | this file was built and signed by the Zig project | a public key **pinned in this package** |
+
+The signature is the one that matters when a mirror is involved. Zig asks
+tooling to prefer the [community
+mirrors](https://ziglang.org/download/community-mirrors.txt) over ziglang.org,
+and this tool does — but a mirror can serve any bytes it likes, so the archive
+is only trusted once it verifies against Zig's key. The `.minisig` itself is
+always fetched from ziglang.org, never from the mirror: a signature served by
+the same host as the file it signs would prove nothing.
+
+The mirrors are volunteer-run and a few are always either down or barely
+moving, so three are queued at random before ziglang.org is used as a last
+resort, and a source that is not delivering is abandoned rather than waited
+out — no data for 15 seconds, a 30-second stall, or a sustained rate under
+64 KiB/s, and the next one is tried. A line like
+
+```
+warning https://some.mirror/zig-….tar.xz: giving up, only 7 KiB/s
+```
+
+is that working as intended; the build carries on with another source. Set
+`ZIG_MIRROR` to pin one you trust.
+
+Three things are checked in the signature, not one: that it was made with the
+expected key, that it covers this file's contents, and that its *trusted
+comment* — which records the file name — is itself signed, so the name cannot
+be edited after the fact.
+
+A file that fails is deleted rather than left in the cache, so a later run
+cannot pick it up and skip the download. A cached archive left behind by an
+interrupted run is re-checked before use rather than trusted on the strength of
+its file name.
+
+You can see it happen:
+
+```bash
+c-cpp-zig-build --verbose        # logs "minisign signature verified (…)"
+c-cpp-zig-build info             # reports whether verification is on
+```
+
+Turning it off is possible and inadvisable:
+
+```bash
+c-cpp-zig-build --no-verify-signature
+```
+
+### Node headers
+
+Downloads from nodejs.org are checked against the SHA-256 in that release's
+`SHASUMS256.txt`, fetched over TLS from nodejs.org itself. Node signs that file
+with the release manager's GPG key; verifying *that* would require shipping a
+keyring, which this package does not do.
+
+### This package's own dependencies
+
+There are two, both header-only, both with no dependencies of their own, and
+both **pinned to an exact version** rather than a range — the headers decide
+what compiles, so the version that ships is the version that was tested:
+
+| | Pinned | Why it is here |
+|---|---|---|
+| `node-addon-api` | 8.9.2 | the C++ layer, so `#include <napi.h>` works with no setup |
+| `node-api-headers` | 1.9.0 | the Windows `.def` files, and an offline header fallback |
+
+Both are published with npm provenance attestations, so the whole tree can be
+checked:
+
+```bash
+npm audit signatures
+```
+
+A version your own project declares always wins over the pinned one, so the pin
+constrains this package, not yours.
 
 ---
 
@@ -226,10 +323,10 @@ JavaScript runtime in the way.
 
 ```zig
 const std = @import("std");
-const znb = @import("zig_native_build");
+const czb = @import("c_cpp_zig_build");
 
 pub fn build(b: *std.Build) !void {
-    _ = try znb.addNodeAddon(b, .{ .name = "my_native" });
+    _ = try czb.addNodeAddon(b, .{ .name = "my_native" });
 }
 ```
 
@@ -250,7 +347,7 @@ as you like in one build script.
 Only `name` is required.
 
 ```zig
-_ = try znb.addNodeAddon(b, .{
+_ = try czb.addNodeAddon(b, .{
     .name = "my_native",
 
     // --- what to compile -------------------------------------------------
@@ -311,7 +408,7 @@ C does not survive it — CRoaring's SIMD headers, for one, fail outright. Turn
 it on for your own code if you want it:
 
 ```zig
-_ = try znb.addNodeAddon(b, .{ .name = "my_native", .pedantic = true });
+_ = try czb.addNodeAddon(b, .{ .name = "my_native", .pedantic = true });
 ```
 
 Either way, silence the warnings for code you did not write, per source set:
@@ -325,7 +422,7 @@ addon.addSources(.{ .dir = "third_party/CRoaring", .files = &.{"roaring.c"}, .wa
 What the four entry points return.
 
 ```zig
-const addon = try znb.addNodeAddon(b, .{ .name = "my_native" });
+const addon = try czb.addNodeAddon(b, .{ .name = "my_native" });
 
 addon.linkDependency("zstd", "zstd");                   // a build.zig.zon package
 addon.linkDependencyWith("libsodium", "sodium", .{      // ...one that takes options
@@ -363,7 +460,7 @@ b.step("run", "Run the tool").dependOn(&run.step);
 ```
 
 ```bash
-zig-native-build --step run -- input.txt
+c-cpp-zig-build --step run -- input.txt
 ```
 
 ---
@@ -379,14 +476,14 @@ dependency is cross compiled along with your code.
 
 ```bash
 # `zig` here is the toolchain this package manages, so there is nothing to install
-npx zig-native-build zig -- fetch --save \
+npx c-cpp-zig-build zig -- fetch --save \
   https://github.com/allyourcodebase/zstd/archive/refs/tags/1.5.7-2.tar.gz
 ```
 
 That writes the URL and its hash into `build.zig.zon`. Then link it:
 
 ```zig
-const addon = try znb.addNodeAddon(b, .{ .name = "my_native" });
+const addon = try czb.addNodeAddon(b, .{ .name = "my_native" });
 addon.linkDependency("zstd", "zstd");   // dependency name, artifact name
 ```
 
@@ -404,7 +501,7 @@ Unpack it under `third_party/` and it is on the include path immediately.
 Compiling it is one line:
 
 ```zig
-const addon = try znb.addNodeAddon(b, .{ .name = "my_native" });
+const addon = try czb.addNodeAddon(b, .{ .name = "my_native" });
 
 // Header-only: nothing to do beyond the default include path.
 
@@ -453,7 +550,7 @@ Most projects need none. When they do, in order of precedence:
 
 ```js
 // zig-native.config.mjs
-import { defineConfig } from 'zig-native-build'
+import { defineConfig } from 'c-cpp-zig-build'
 
 export default defineConfig({
   optimize: 'small',
@@ -473,11 +570,11 @@ export default defineConfig({
 ### Command line
 
 ```
-zig-native-build [build]              build (the default command)
-zig-native-build init                 create the build files
-zig-native-build clean                remove build/, .zig-cache/, .zig-native/
-zig-native-build info                 report what a build would use
-zig-native-build zig -- <args>        run the managed Zig toolchain
+c-cpp-zig-build [build]              build (the default command)
+c-cpp-zig-build init                 create the build files
+c-cpp-zig-build clean                remove build/, .zig-cache/, .zig-native/
+c-cpp-zig-build info                 report what a build would use
+c-cpp-zig-build zig -- <args>        run the managed Zig toolchain
 ```
 
 | Flag | Meaning |
@@ -494,6 +591,7 @@ zig-native-build zig -- <args>        run the managed Zig toolchain
 | `--node-version <ver>` | Node headers to compile against |
 | `--node-headers <mode>` | `auto`, `download`, `package`, or a path |
 | `--offline` | fail rather than download anything |
+| `--no-verify-signature` | skip the Zig archive signature check (inadvisable) |
 | `--no-napi` | build a plain library, not an addon |
 
 Anything after `--` is passed to `zig build`, which is how
@@ -503,12 +601,12 @@ Anything after `--` is passed to `zig build`, which is how
 
 | Variable | Effect |
 |---|---|
-| `ZIG_NATIVE_BUILD_HOME` | where downloads are cached (default `~/.zig-build`) |
+| `C_CPP_ZIG_BUILD_HOME` | where downloads are cached (default `~/.zig-build`) |
 | `ZIG_EXE` | use this Zig binary |
 | `ZIG_MIRROR` | try this Zig mirror first |
 | `NODEJS_ORG_MIRROR` | where to fetch Node headers from |
 | `NO_COLOR` | plain output |
-| `ZIG_NATIVE_BUILD_DEBUG` | print stack traces on failure |
+| `C_CPP_ZIG_BUILD_DEBUG` | print stack traces on failure |
 
 ### The Node version
 
@@ -523,7 +621,7 @@ version loads in every later one — the version mostly decides which `v8.h` and
 ## Cross compilation
 
 ```bash
-zig-native-build --target x86_64-linux-gnu \
+c-cpp-zig-build --target x86_64-linux-gnu \
                  --target aarch64-linux-gnu \
                  --target aarch64-macos \
                  --target x86_64-windows
@@ -605,7 +703,7 @@ CLion all read it, so go-to-definition works on your C sources including the
 Node headers.
 
 ```bash
-zig-native-build --step cdb    # write it without building anything else
+c-cpp-zig-build --step cdb    # write it without building anything else
 ```
 
 It is rewritten only when its content changes, so your editor does not
@@ -620,9 +718,9 @@ The CLI is the same everywhere; only the wrapper differs.
 ```jsonc
 {
   "scripts": {
-    "build": "zig-native-build",
-    "build:debug": "zig-native-build --debug",
-    "clean": "zig-native-build clean"
+    "build": "c-cpp-zig-build",
+    "build:debug": "c-cpp-zig-build --debug",
+    "clean": "c-cpp-zig-build clean"
   }
 }
 ```
@@ -657,7 +755,7 @@ Cache `~/.zig-build` and the build is fast after the first run.
 - uses: actions/cache@v4
   with:
     path: ~/.zig-build
-    key: zig-native-build-${{ runner.os }}-${{ hashFiles('**/build.zig.zon') }}
+    key: c-cpp-zig-build-${{ runner.os }}-${{ hashFiles('**/build.zig.zon') }}
 
 - run: npm ci
 - run: npm run build
@@ -673,8 +771,8 @@ runner.
 For a hermetic build, pin the toolchain and forbid downloads after a warm-up:
 
 ```bash
-zig-native-build --zig-version 0.15.2 --node-version 22.11.0
-zig-native-build --offline        # fails rather than reaching the network
+c-cpp-zig-build --zig-version 0.15.2 --node-version 22.11.0
+c-cpp-zig-build --offline        # fails rather than reaching the network
 ```
 
 ---
@@ -702,27 +800,31 @@ cd examples/01-minimal-c-addon && node --test
 ## Porting an existing Zig build
 
 If you already drive `zig build` from a hand-written `build.zig`, the move is
-mostly deletion. Two real modules, ported in full, for scale:
+mostly deletion. Two shapes that come up often, and what they collapse to:
 
-### A C library with C++ bindings, a vendored library and a package dependency
+### A vendored SIMD library and a package dependency
 
-Roughly 200 lines of `build.zig` — recursive source walking, N-API include
-paths, Windows import-library generation, the `.node` install step, a
-`compile_commands.json` step, AVX512 detection — became this:
+Recursive source walking, Node-API include paths, Windows import-library
+generation, the `.node` install step, a `compile_commands.json` step and CPU
+feature detection are all handled, so what is left is the part that is actually
+specific to the project:
 
 ```zig
 const std = @import("std");
-const znb = @import("zig_native_build");
+const czb = @import("c_cpp_zig_build");
 
 pub fn build(b: *std.Build) !void {
-    const addon = try znb.addNodeAddon(b, .{ .name = "geosearch_native" });
+    const addon = try czb.addNodeAddon(b, .{ .name = "search_native" });
 
-    // A package dependency whose headers it does not install itself.
-    addon.linkDependency("blockchain_core", "gradido_blockchain_core");
-    addon.addDependencyIncludePath("blockchain_core", "include");
+    // A package dependency that does not install its headers, so the include
+    // path is added by hand. Most packages do install them and need only the
+    // first line.
+    addon.linkDependency("core", "core");
+    addon.addDependencyIncludePath("core", "include");
 
-    // CRoaring, vendored under third_party/. No warning flags — its SIMD
-    // headers do not survive them — and AVX512 off unless the CPU has it.
+    // CRoaring, vendored under third_party/. Its SIMD headers do not survive
+    // the default warning flags, and AVX512 is switched off unless the target
+    // CPU is known to have it.
     addon.addSources(.{
         .dir = "third_party/roaring",
         .files = &.{"roaring.c"},
@@ -740,15 +842,15 @@ fn hasAvx512(target: std.Build.ResolvedTarget) bool {
 }
 ```
 
-### A crypto module with a non-standard layout
+### A layout that is not the default, and a multi-artifact package
 
 ```zig
 const std = @import("std");
-const znb = @import("zig_native_build");
+const czb = @import("c_cpp_zig_build");
 
 pub fn build(b: *std.Build) !void {
-    const addon = try znb.addNodeAddon(b, .{
-        .name = "shared_native",
+    const addon = try czb.addNodeAddon(b, .{
+        .name = "crypto_native",
         // third_party/ is compiled here as well as included, and its warnings
         // are not this project's business.
         .sources = &.{
@@ -756,11 +858,12 @@ pub fn build(b: *std.Build) !void {
             .{ .dir = "napi" },
             .{ .dir = "third_party", .warnings = false },
         },
+        // Generated headers live deeper than the convention expects.
         .include = &.{
             "include",
-            "include/gradido_blockchain_core/data/proto/gradido",
+            "include/generated/proto",
             "third_party",
-            "third_party/pbtools",
+            "third_party/protobuf-c",
         },
         .defines = &.{.{ .name = "USE_SODIUM" }},
     });
@@ -775,23 +878,24 @@ pub fn build(b: *std.Build) !void {
 }
 ```
 
-Both produce a `.node` within a kilobyte of what their old build files
+Both of these are real ports, of build files of roughly two hundred lines
+each. The addons they produce are within a kilobyte of what the originals
 produced, with the same exports.
 
 ### The steps
 
-1. `npm i -D zig-native-build`
+1. `npm i -D c-cpp-zig-build`
 2. Add the template to `build.zig.zon`, keeping your existing dependencies:
    ```zig
    .dependencies = .{
-       .zig_native_build = .{ .path = ".zig-native" },
+       .c_cpp_zig_build = .{ .path = ".zig-native" },
        // ...yours, unchanged
    },
    ```
 3. Rewrite `build.zig` as above.
-4. Delete the `zig_compile_commands` dependency — the template brings its own
-   generator, so that entry is no longer needed.
-5. Replace the build script in `package.json` with `zig-native-build`, and
+4. Delete the `zig_compile_commands` dependency if you have one — the template
+   brings its own generator, so that entry is no longer needed.
+5. Replace the build script in `package.json` with `c-cpp-zig-build`, and
    delete the helper that used to drive Zig.
 6. A dependency you link with `linkDependency` must not be `.lazy = true`.
    Drop the flag, or resolve it yourself with `b.lazyDependency`.
@@ -825,12 +929,12 @@ which is a real language and rather more readable.
 ## Troubleshooting
 
 **`no build.zig.zon in <dir>`**
-Run `zig-native-build init`.
+Run `c-cpp-zig-build init`.
 
 **`build.zig.zon does not declare the build template`**
 Add this to its `.dependencies`:
 ```zig
-.zig_native_build = .{ .path = ".zig-native" },
+.c_cpp_zig_build = .{ .path = ".zig-native" },
 ```
 
 **`invalid fingerprint: 0x…; if this is a new or forked package, use this value: 0x…`**
@@ -843,7 +947,7 @@ Either create it, remove it from `.sources`, or mark the set
 
 **`no Node headers were provided`**
 `build.zig` was run directly instead of through the CLI. Either use
-`zig-native-build`, or pass `-Dnode-headers=<dir>` yourself.
+`c-cpp-zig-build`, or pass `-Dnode-headers=<dir>` yourself.
 
 **`undefined symbol: _napi_…` when cross compiling to macOS**
 This should not happen — the template sets the flag that allows it. If you
@@ -855,14 +959,19 @@ Only when you run `zig build` by hand. Through the CLI, `node.lib` is
 downloaded automatically.
 
 **The addon does not reflect my changes**
-`zig-native-build clean` then build again. If that fixes it, the build cache
+`c-cpp-zig-build clean` then build again. If that fixes it, the build cache
 went stale — please report it.
+
+**`warning: … giving up, only N KiB/s` during the first build**
+A community mirror was too slow, so it was dropped and another was tried. The
+build continues; nothing is wrong. Set `ZIG_MIRROR` to a fast mirror, or to
+`https://ziglang.org/download` to skip the mirrors entirely.
 
 **Behind a proxy or an air-gapped network**
 Set `ZIG_MIRROR` and `NODEJS_ORG_MIRROR` to internal mirrors, or pre-populate
 `~/.zig-build` and build with `--offline`.
 
-**`zig-native-build info`** prints every resolved path and version. It is the
+**`c-cpp-zig-build info`** prints every resolved path and version. It is the
 first thing to run when a build behaves unexpectedly.
 
 ---
@@ -872,7 +981,7 @@ first thing to run when a build behaves unexpectedly.
 ### Node API
 
 ```js
-import { build, clean, info, zig, defineConfig } from 'zig-native-build'
+import { build, clean, info, zig, defineConfig } from 'c-cpp-zig-build'
 
 await build({ root: 'packages/native', optimize: 'fast' })
 await build({ targets: ['x86_64-linux-gnu', 'aarch64-macos'] })
@@ -883,29 +992,59 @@ await zig(['fmt', '--check', 'build.zig'])
 
 Full types are in [`index.d.ts`](index.d.ts).
 
-### Linting
-
-The JavaScript is checked and formatted with [Biome](https://biomejs.dev),
-configured to match the projects this package was written for.
-
-```bash
-npm run lint          # check
-npm run lint:fix      # check and fix
-npm run fmt:check     # the same for the Zig sources, via zig fmt
-```
-
 ### Zig version
 
 The package targets **Zig 0.15.2**. Zig's build API is not yet stable, so a
 different release may need a different template; pin with `--zig-version` or
 `zigVersion` and upgrade deliberately.
 
-### Renaming this package
+### Versioning
 
-Everything is one name in `package.json` plus the Zig dependency key
-`zig_native_build` in `zig/build.zig.zon` and in the scaffolder. To publish
-under a scope, change `"name"` in `package.json` only — the Zig side is
-independent of it.
+[Semantic versioning](https://semver.org), with the Zig template counted as
+part of the public interface: a change to `build.zig` that an existing project
+would have to react to is a breaking change, not a patch. Changes are listed in
+[CHANGELOG.md](CHANGELOG.md).
+
+---
+
+## Working on this package
+
+Only relevant if you are changing `c-cpp-zig-build` itself. [AGENTS.md](AGENTS.md)
+has the full layout and ground rules.
+
+```bash
+npm install
+npm test              # unit tests
+npm run test:examples # builds and tests all four examples
+npm run lint          # Biome
+npm run fmt:check     # zig fmt, for the Zig template
+```
+
+### Forking or renaming
+
+The package name appears in five derived forms. Publishing under a different
+name, or under a scope, means changing all of them together — a half-rename is
+worse than either state:
+
+| Form | Where |
+|---|---|
+| `c-cpp-zig-build` | `package.json` name, both `bin` entries, every doc and example |
+| `czb` | the short `bin` alias, and the `@import` alias in every `build.zig` |
+| `c_cpp_zig_build` | the Zig package name in `zig/build.zig.zon`, the `.dependencies` key every project writes, and `ZIG_PACKAGE_NAME` in `lib/template.js` |
+| `C_CPP_ZIG_BUILD_HOME`, `C_CPP_ZIG_BUILD_DEBUG` | environment variables |
+| a fingerprint | `zig/build.zig.zon` |
+
+The fingerprint is the one that bites: Zig derives it from the package name and
+rejects a mismatch. After renaming the Zig package, delete the `.fingerprint`
+line, build once, and paste in the value Zig prints — or compute it with the
+same function the scaffolder uses:
+
+```bash
+node -e "import('./lib/scaffold.js').then(m => console.log(m.fingerprint('new_name')))"
+```
+
+Scoping the npm name (`@you/c-cpp-zig-build`) touches only `package.json`; the
+Zig side is independent of the npm scope.
 
 ---
 

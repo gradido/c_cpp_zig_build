@@ -20,7 +20,7 @@ pub fn dlltoolMachine(target: std.Build.ResolvedTarget) []const u8 {
         .x86 => "i386",
         .aarch64 => "arm64",
         else => std.debug.panic(
-            "zig-native-build: no dlltool machine name for Windows on {s}",
+            "c-cpp-zig-build: no dlltool machine name for Windows on {s}",
             .{@tagName(target.result.cpu.arch)},
         ),
     };

@@ -71,12 +71,12 @@ pub fn collect(b: *std.Build, set: SourceSet) !Collected {
         error.FileNotFound => {
             if (set.optional) return .{ .files = &.{}, .has_cpp = false };
             std.debug.panic(
-                "zig-native-build: source directory '{s}' does not exist under {s}. " ++
+                "c-cpp-zig-build: source directory '{s}' does not exist under {s}. " ++
                     "Create it, remove it from `sources`, or mark the set `.optional = true`.",
                 .{ dir_path, b.build_root.path orelse "." },
             );
         },
-        else => std.debug.panic("zig-native-build: cannot open '{s}': {s}", .{ dir_path, @errorName(err) }),
+        else => std.debug.panic("c-cpp-zig-build: cannot open '{s}': {s}", .{ dir_path, @errorName(err) }),
     };
     defer dir.close();
 

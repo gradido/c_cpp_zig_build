@@ -5,10 +5,10 @@ The smallest thing worth building: two C functions, a Node-API binding, and a
 
 ```zig
 const std = @import("std");
-const znb = @import("zig_native_build");
+const czb = @import("c_cpp_zig_build");
 
 pub fn build(b: *std.Build) !void {
-    _ = try znb.addNodeAddon(b, .{ .name = "minimal_addon" });
+    _ = try czb.addNodeAddon(b, .{ .name = "minimal_addon" });
 }
 ```
 
@@ -45,5 +45,5 @@ the Node-API. Example 3 takes that further.
 **Cross compiling needs no changes:**
 
 ```bash
-npx zig-native-build --target aarch64-macos --target x86_64-windows
+npx c-cpp-zig-build --target aarch64-macos --target x86_64-windows
 ```

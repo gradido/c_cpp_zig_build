@@ -1,11 +1,11 @@
-# AGENTS.md — building a native C/C++ module with `zig-native-build`
+# AGENTS.md — building a native C/C++ module with `c-cpp-zig-build`
 
 Guidance for coding agents working in a project that builds a native Node.js
 module with this package. Copy this file into such a project (or link to it)
 so an agent has the conventions to hand.
 
-If you are working *on* `zig-native-build` itself, read
-[the maintainer section](#working-on-zig-native-build-itself) at the end.
+If you are working *on* `c-cpp-zig-build` itself, read
+[the maintainer section](#working-on-c-cpp-zig-build-itself) at the end.
 
 ---
 
@@ -26,18 +26,18 @@ first build; nothing needs to be installed.
 ```bash
 npm run build                       # build (ReleaseSmall by default)
 npm run lint                        # biome, if the project uses it
-npx zig-native-build --debug        # a debug build, with assertions
-npx zig-native-build --verbose      # print the exact compiler command lines
-npx zig-native-build info           # every resolved path, version and target
-npx zig-native-build clean          # remove build/, .zig-cache/, .zig-native/
-npx zig-native-build --target aarch64-macos   # cross compile
-npx zig-native-build zig -- <args>  # run the managed Zig toolchain
+npx c-cpp-zig-build --debug        # a debug build, with assertions
+npx c-cpp-zig-build --verbose      # print the exact compiler command lines
+npx c-cpp-zig-build info           # every resolved path, version and target
+npx c-cpp-zig-build clean          # remove build/, .zig-cache/, .zig-native/
+npx c-cpp-zig-build --target aarch64-macos   # cross compile
+npx c-cpp-zig-build zig -- <args>  # run the managed Zig toolchain
 ```
 
 Substitute your package manager's runner for `npx` (`bunx`, `yarn dlx`,
 `pnpm exec`) — the tool is the same.
 
-**When a build fails, run `npx zig-native-build info` first.** It prints which
+**When a build fails, run `npx c-cpp-zig-build info` first.** It prints which
 Zig, which Node headers, which target and which output directory are in play,
 and most confusing failures are explained by one of those being unexpected.
 
@@ -64,7 +64,7 @@ subdirectories: the walk is recursive.
 
 Bindings may be C (`#include <node_api.h>`) or C++ (`#include <napi.h>`).
 Both headers are available without the project installing anything:
-`zig-native-build` downloads the Node headers and depends on `node-addon-api`.
+`c-cpp-zig-build` downloads the Node headers and depends on `node-addon-api`.
 Declare `node-addon-api` in the project's package.json when the version
 matters — the declared one wins.
 
@@ -104,10 +104,10 @@ The whole file is often this:
 
 ```zig
 const std = @import("std");
-const znb = @import("zig_native_build");
+const czb = @import("c_cpp_zig_build");
 
 pub fn build(b: *std.Build) !void {
-    _ = try znb.addNodeAddon(b, .{ .name = "my_native" });
+    _ = try czb.addNodeAddon(b, .{ .name = "my_native" });
 }
 ```
 
@@ -124,7 +124,7 @@ Change it when, and only when, one of these is true:
 | a Zig package is being linked | `artifact.linkDependency("dep", "artifact")` |
 | that package takes build options | `artifact.linkDependencyWith("dep", "artifact", .{ .static = true })` |
 | a system library is needed | `artifact.linkSystemLibrary("pthread")` |
-| the same code should also be a CLI or static library | a second `znb.addExecutable` / `addStaticLibrary` call |
+| the same code should also be a CLI or static library | a second `czb.addExecutable` / `addStaticLibrary` call |
 
 Everything else — libc, libc++, the Node headers, the `.node` extension, the
 Windows import library, `compile_commands.json` — is handled and should not be
@@ -143,14 +143,14 @@ In this order of preference:
 ### 1. A Zig package
 
 ```bash
-npx zig-native-build zig -- fetch --save https://github.com/allyourcodebase/zstd/archive/refs/tags/1.5.7-2.tar.gz
+npx c-cpp-zig-build zig -- fetch --save https://github.com/allyourcodebase/zstd/archive/refs/tags/1.5.7-2.tar.gz
 ```
 
 This edits `build.zig.zon` for you — do not write the `.hash` by hand, it will
 be wrong. Then in `build.zig`:
 
 ```zig
-const addon = try znb.addNodeAddon(b, .{ .name = "my_native" });
+const addon = try czb.addNodeAddon(b, .{ .name = "my_native" });
 addon.linkDependency("zstd", "zstd");
 ```
 
@@ -211,7 +211,7 @@ test that passes locally and fails in CI, or the reverse.
 `build.zig` and run it as a step:
 
 ```zig
-const tests = try znb.addExecutable(b, .{
+const tests = try czb.addExecutable(b, .{
     .name = "test_thing",
     .sources = &.{ .{ .dir = "src" }, .{ .dir = "tests" } },
 });
@@ -220,7 +220,7 @@ b.step("test", "Run the C tests").dependOn(&run.step);
 ```
 
 ```bash
-npx zig-native-build --step test
+npx c-cpp-zig-build --step test
 ```
 
 ---
@@ -230,7 +230,7 @@ npx zig-native-build --step test
 **Do not edit generated files.** `.zig-native/` is overwritten on every build,
 and `build/` on every compile. A change in either is lost without warning. If
 something in `.zig-native/` needs to change, the change belongs in the
-`zig-native-build` package.
+`c-cpp-zig-build` package.
 
 **Do not add a system compiler.** No `gcc`, `clang`, `cl.exe`, `make`,
 `CMakeLists.txt` or `binding.gyp`. Zig is the toolchain; a second one defeats
@@ -240,7 +240,7 @@ the point and will not be reproducible on another machine.
 `compile_commands.json` belong in `.gitignore`.
 
 **Do not hand-write `.hash` values** in `build.zig.zon`. Use
-`zig-native-build zig -- fetch --save`.
+`c-cpp-zig-build zig -- fetch --save`.
 
 **Do not pin the artifact name in two places.** The name in
 `build.zig` decides the output file; `index.cjs` must load exactly that name.
@@ -274,11 +274,11 @@ strips assertions and makes stack traces useless. A crash reproduced under
 
 | Message | Cause and fix |
 |---|---|
-| `no build.zig.zon in <dir>` | not set up yet — run `zig-native-build init` |
-| `build.zig.zon does not declare the build template` | add `.zig_native_build = .{ .path = ".zig-native" },` to `.dependencies` |
+| `no build.zig.zon in <dir>` | not set up yet — run `c-cpp-zig-build init` |
+| `build.zig.zon does not declare the build template` | add `.c_cpp_zig_build = .{ .path = ".zig-native" },` to `.dependencies` |
 | `invalid fingerprint: 0x…; use this value: 0x…` | paste the printed value into `build.zig.zon` |
 | `source directory 'napi' does not exist` | create it, drop it from `.sources`, or mark the set `.optional = true` |
-| `no Node headers were provided` | `zig build` was run directly; use `zig-native-build` |
+| `no Node headers were provided` | `zig build` was run directly; use `c-cpp-zig-build` |
 | `error: call to undeclared function` | a missing `#include` — Zig's C compiler is strict about C99 and later |
 | `artifact name '…' is ambiguous` | the package builds several artifacts of that name; pick one with `linkDependencyWith(…, .{ .static = true, .shared = false })` |
 | `static function '…' is used in an inline function with external linkage` | `-Wpedantic` on third-party code; set `.warnings = false` on that source set |
@@ -289,14 +289,15 @@ strips assertions and makes stack traces useless. A crash reproduced under
 
 ---
 
-## Working on `zig-native-build` itself
+## Working on `c-cpp-zig-build` itself
 
 ```
 lib/                JavaScript side (ESM, no build step)
   cli.js            argument parsing and command dispatch
   index.js          build / clean / info / zig
   config.js         defaults, config files, auto-detection
-  zig.js            toolchain download, mirrors, checksum verification
+  zig.js            toolchain download, mirrors, checksum + signature checks
+  minisign.js       Ed25519 signature verification for the Zig archive
   node-headers.js   Node headers, node.lib, node-addon-api discovery
   scaffold.js       the `init` command
   template.js       copying the Zig template into a project
@@ -316,6 +317,21 @@ index.d.ts          hand-written types for the JavaScript API
 
 Ground rules:
 
+- **A user-visible change needs a `CHANGELOG.md` entry and a version bump**,
+  and the Zig template in `zig/build.zig.zon` carries the same version as the
+  package. Tests enforce both. The template counts as public interface: a
+  `build.zig` change an existing project would have to react to is a breaking
+  change, not a patch.
+- **Every dependency is pinned to an exact version**, not a range. For the two
+  header packages that is because the headers decide what compiles, so the
+  version that ships is the version that was tested; for the linter it is
+  because one that moves under you turns an unrelated commit into a diff full
+  of reformatting. Upgrade deliberately: bump the pin, run
+  `npx biome migrate --write` for Biome, and rebuild every example — a header
+  bump can only be judged by compiling against it.
+- **A header package may only be bumped to a version that still supports the
+  oldest Node in `engines`.** There is a test for it; when it fails, either the
+  pin stops moving or `engines` does.
 - **The only runtime dependencies are `node-addon-api` and `node-api-headers`.**
   Both are header-only with no dependencies of their own, and both earn their
   place: they are what lets a C++ addon and a Windows or Bun build work with
@@ -323,7 +339,7 @@ Ground rules:
   weight — a build tool that breaks because a transitive dependency broke is a
   bad build tool.
 - **Both are resolved from the consuming project first.** A project that pins
-  its own `node-addon-api` compiles against that one; `zig-native-build info`
+  its own `node-addon-api` compiles against that one; `c-cpp-zig-build info`
   reports which copy was used.
 - **The JavaScript is plain ESM with no compile step.** Types live in
   `index.d.ts`, written by hand.
@@ -331,9 +347,21 @@ Ground rules:
   `compile_commands.json` generator precisely so that a consuming project's
   `build.zig.zon` stays free for the project's own dependencies. Do not add a
   Zig dependency to it.
-- **Every download is checksum-verified** against the publisher's own manifest,
-  and extracted to a staging directory before being renamed into place. Keep
-  both properties.
+- **Every download is verified before it is unpacked**, and extracted to a
+  staging directory before being renamed into place. Keep both properties.
+  The Zig archive gets two independent checks — the SHA-256 from ziglang.org's
+  index, and a minisign signature against a key pinned in `lib/minisign.js`.
+  Neither replaces the other: the checksum says the file is the one ziglang.org
+  listed, the signature says the Zig project made it. The signature is what
+  makes the community mirrors safe to use, so it must always be fetched from
+  ziglang.org rather than from the mirror serving the archive.
+- **A file that fails verification is deleted, never merely rejected.** Leaving
+  it in the download cache would let the next run find it and skip the
+  download.
+- **`lib/minisign.js` is security-critical and has its own test file.** Its
+  tests generate a keypair and craft signatures, so they need no network. Any
+  change there needs the negative cases to still fail: tampered file, wrong
+  key, edited trusted comment, mismatched file name.
 - **Zig's build API is unstable.** Changing the supported Zig version means
   re-testing every example, not just the unit tests.
 

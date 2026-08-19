@@ -41,4 +41,4 @@ Copy the directory, then:
 3. Regenerate the fingerprint in `build.zig.zon`: delete the line, build once,
    and paste the value Zig prints.
 
-Or skip all of that and run `zig-native-build init` in an empty directory.
+Or skip all of that and run `c-cpp-zig-build init` in an empty directory.

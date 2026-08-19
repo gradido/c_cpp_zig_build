@@ -4,7 +4,7 @@
     .fingerprint = 0x7653a9ebc73cae6e,
     .minimum_zig_version = "0.15.1",
     .dependencies = .{
-        .zig_native_build = .{ .path = ".zig-native" },
+        .c_cpp_zig_build = .{ .path = ".zig-native" },
         .zstd = .{
             .url = "https://github.com/allyourcodebase/zstd/archive/refs/tags/1.5.7-2.tar.gz",
             .hash = "zstd-1.5.7-2-KEItkAMwAADNhCbGaImKrjXjnSA51jcqEbGCA3RasVZ9",

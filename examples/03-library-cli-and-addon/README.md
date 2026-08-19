@@ -24,7 +24,7 @@ One `build.zig` produces all three:
 npm run build
 node --test                                  # the addon
 ./build/bin/digest package.json              # the CLI
-npx zig-native-build --step run -- package.json   # the CLI, via zig build
+npx c-cpp-zig-build --step run -- package.json   # the CLI, via zig build
 ```
 
 All three give the same answer for the same input, because they are the same
@@ -36,7 +36,7 @@ code.
 `SourceSet` constant and handed to each artifact:
 
 ```zig
-const fasthash: znb.SourceSet = .{
+const fasthash: czb.SourceSet = .{
     .dir = "third_party/fasthash",
     .flags = &.{"-DFASTHASH_SEED=0xcbf29ce484222325ULL"},
 };
@@ -60,7 +60,7 @@ question is much faster to answer.
 alone, because the bindings belong to the addon:
 
 ```zig
-const lib = try znb.addStaticLibrary(b, .{
+const lib = try czb.addStaticLibrary(b, .{
     .name = "digest",
     .sources = &.{.{ .dir = "src" }},
 });

@@ -1,13 +1,13 @@
-//! zig-native-build — a build.zig template for native Node.js modules.
+//! c-cpp-zig-build — a build.zig template for native Node.js modules.
 //!
 //! A project describes itself with a name and, if it needs to, a handful of
 //! overrides; everything else follows from the directory layout:
 //!
 //!     const std = @import("std");
-//!     const znb = @import("zig_native_build");
+//!     const czb = @import("c_cpp_zig_build");
 //!
 //!     pub fn build(b: *std.Build) !void {
-//!         _ = try znb.addNodeAddon(b, .{ .name = "my_native" });
+//!         _ = try czb.addNodeAddon(b, .{ .name = "my_native" });
 //!     }
 //!
 //! That compiles every C/C++ file under `src/` and `napi/`, adds `include/`
@@ -17,7 +17,7 @@
 //! directory. Anything beyond that is done on the returned artifact, which is
 //! an ordinary `std.Build.Step.Compile` with a few conveniences attached.
 //!
-//! This file is copied into a project as `.zig-native/` by the `zig-native-build`
+//! This file is copied into a project as `.zig-native/` by the `c-cpp-zig-build`
 //! npm package. It is generated — edit the package, not the copy.
 
 const std = @import("std");
@@ -179,7 +179,7 @@ pub const Artifact = struct {
 
     /// Links a library from a `build.zig.zon` dependency.
     ///
-    ///     const addon = try znb.addNodeAddon(b, .{ .name = "my_native" });
+    ///     const addon = try czb.addNodeAddon(b, .{ .name = "my_native" });
     ///     addon.linkDependency("zstd", "zstd");
     ///
     /// The dependency is resolved with the same target and optimisation mode
@@ -236,7 +236,7 @@ pub const Artifact = struct {
     pub fn addSources(self: Artifact, set: SourceSet) void {
         for (self.compiles) |compile| {
             attachSources(self.b, compile, set, self.options) catch |err| {
-                std.debug.panic("zig-native-build: {s}", .{@errorName(err)});
+                std.debug.panic("c-cpp-zig-build: {s}", .{@errorName(err)});
             };
         }
     }
@@ -507,8 +507,8 @@ fn configure(
             compile.root_module.addSystemIncludePath(.{ .cwd_relative = dir });
         } else {
             std.debug.panic(
-                "zig-native-build: no Node headers were provided. Build through the " ++
-                    "`zig-native-build` command, or pass -Dnode-headers=<dir> yourself.",
+                "c-cpp-zig-build: no Node headers were provided. Build through the " ++
+                    "`c-cpp-zig-build` command, or pass -Dnode-headers=<dir> yourself.",
                 .{},
             );
         }
@@ -621,7 +621,7 @@ fn linkWindowsHost(
         }
     }
     std.debug.panic(
-        "zig-native-build: building a Windows addon for {s} needs an import library. " ++
+        "c-cpp-zig-build: building a Windows addon for {s} needs an import library. " ++
             "Pass -Dnode-api-def=<node_api.def> (works for Node and Bun) or " ++
             "-Dnode-lib=<node.lib> (Node only).",
         .{host_executable},

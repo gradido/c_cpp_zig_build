@@ -5,7 +5,7 @@ this repository. There is no `src/` either: everything the addon does comes
 from the package.
 
 ```zig
-const addon = try znb.addNodeAddon(b, .{
+const addon = try czb.addNodeAddon(b, .{
     .name = "zstd_addon",
     .sources = &.{.{ .dir = "napi" }},
 });
@@ -15,12 +15,12 @@ addon.linkDependency("zstd", "zstd");
 The dependency was added with one command:
 
 ```bash
-npx zig-native-build zig -- fetch --save \
+npx c-cpp-zig-build zig -- fetch --save \
   https://github.com/allyourcodebase/zstd/archive/refs/tags/1.5.7-2.tar.gz
 ```
 
 That wrote the URL and its hash into `build.zig.zon`. `zig` here is the
-toolchain `zig-native-build` manages, so there is nothing to install first.
+toolchain `c-cpp-zig-build` manages, so there is nothing to install first.
 
 ```bash
 npm run build     # fetches zstd on the first run, then never again
@@ -53,7 +53,7 @@ addon.linkDependencyWith("libsodium", "sodium", .{ .static = true, .shared = fal
 package with this artifact's target and optimisation mode, so
 
 ```bash
-npx zig-native-build --target aarch64-macos
+npx c-cpp-zig-build --target aarch64-macos
 ```
 
 builds zstd for aarch64-macos too. Nothing about that is special-cased — it is

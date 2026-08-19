@@ -3,7 +3,7 @@
 The same shape as example 1, in C++.
 
 ```zig
-_ = try znb.addNodeAddon(b, .{
+_ = try czb.addNodeAddon(b, .{
     .name = "matrix_addon",
     .cpp_std = "c++20",
 });
@@ -14,7 +14,7 @@ Two things happen without being asked for:
 - **libc++ is linked**, because C++ sources were found. `.link_libcpp` exists
   if you need to override that; you normally do not.
 - **`node-addon-api`'s headers are added.** A copy ships with
-  `zig-native-build`, so this would compile with no dependencies at all. This
+  `c-cpp-zig-build`, so this would compile with no dependencies at all. This
   example declares its own anyway, which is the better habit: a declared
   version wins over the bundled one, and `napi.h` does change between majors.
 
@@ -23,7 +23,7 @@ npm install       # node-addon-api
 npm run build
 node --test
 
-npx zig-native-build info   # says which copy of the headers was used
+npx c-cpp-zig-build info   # says which copy of the headers was used
 ```
 
 ## Worth noticing

@@ -1,6 +1,6 @@
 {
-  "name": "zig-native-build",
-  "version": "0.1.0",
+  "name": "c-cpp-zig-build",
+  "version": "0.2.0",
   "description": "Build native C/C++ Node.js addons and libraries with Zig — downloads the Zig toolchain and the Node headers for you, and ships a build.zig template that configures a whole project from a handful of parameters.",
   "type": "module",
   "main": "./lib/index.js",
@@ -13,14 +13,15 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "zig-native-build": "lib/cli.js",
-    "znb": "lib/cli.js"
+    "c-cpp-zig-build": "./lib/cli.js",
+    "czb": "./lib/cli.js"
   },
   "files": [
     "lib",
     "zig",
     "index.d.ts",
     "README.md",
+    "CHANGELOG.md",
     "AGENTS.md",
     "LICENSE"
   ],
@@ -55,10 +56,10 @@
     "node": ">=18.17"
   },
   "dependencies": {
-    "node-addon-api": "^8.7.0",
-    "node-api-headers": "^1.8.0"
+    "node-addon-api": "8.9.2",
+    "node-api-headers": "1.9.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.0.0"
+    "@biomejs/biome": "2.5.9"
   }
 }

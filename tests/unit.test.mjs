@@ -12,7 +12,7 @@ import { fingerprint } from '../lib/scaffold.js'
 import { packagedTemplateDir } from '../lib/template.js'
 
 function tempProject(files) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'znb-test-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'czb-test-'))
   for (const [name, contents] of Object.entries(files)) {
     const file = path.join(dir, name)
     fs.mkdirSync(path.dirname(file), { recursive: true })
@@ -32,7 +32,7 @@ test('fingerprint matches the value Zig computes', () => {
   // Zig reports these when the field is wrong; the high half is CRC-32 of the
   // package name and must match exactly.
   assert.match(fingerprint('minimal_addon'), /^0xcb0404b8[0-9a-f]{8}$/)
-  assert.match(fingerprint('zig_native_build'), /^0x5e787703[0-9a-f]{8}$/)
+  assert.match(fingerprint('c_cpp_zig_build'), /^0xb623d410[0-9a-f]{8}$/)
   assert.match(fingerprint('blockchain_core'), /^0x838910c1[0-9a-f]{8}$/)
 })
 
@@ -172,6 +172,82 @@ test('a package the project declares is reported as its own', () => {
   })
   assert.equal(resolveNodeAddonApi(declaring).declared, true)
   assert.equal(resolveNodeApiHeadersPackage(declaring).declared, false)
+})
+
+test('the published manifest is intact', () => {
+  // The package name, the bin names and the file list are what a consumer
+  // installs against; a stray edit to any of them is silent until someone
+  // tries to use the published package.
+  const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  assert.equal(pkg.name, 'c-cpp-zig-build')
+  assert.deepEqual(Object.keys(pkg.bin).sort(), ['czb', 'c-cpp-zig-build'].sort())
+  for (const entry of ['lib', 'zig', 'index.d.ts', 'README.md', 'AGENTS.md', 'LICENSE']) {
+    assert.ok(pkg.files.includes(entry), `${entry} is missing from the published files`)
+  }
+  // Every dependency is pinned exactly, not ranged. For the header packages
+  // that is because the headers decide what compiles; for the linter it is
+  // because one that moves under you turns an unrelated commit into a diff
+  // full of reformatting.
+  const declared = { ...pkg.dependencies, ...pkg.devDependencies }
+  for (const [name, range] of Object.entries(declared)) {
+    assert.match(range, /^\d+\.\d+\.\d+$/, `${name} should be pinned to an exact version`)
+  }
+})
+
+test('the changelog documents the version being shipped', () => {
+  // A release whose changes are only in the commit log is a release nobody
+  // can evaluate before installing it.
+  const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  const changelog = fs.readFileSync(new URL('../CHANGELOG.md', import.meta.url), 'utf8')
+  assert.ok(
+    changelog.includes(`## [${pkg.version}]`),
+    `CHANGELOG.md has no entry for ${pkg.version}`,
+  )
+})
+
+test('the Zig template carries the same version as the package', () => {
+  // The template is published inside the package and copied into projects; two
+  // version numbers that disagree make it impossible to say what a project has.
+  const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  const zon = fs.readFileSync(new URL('../zig/build.zig.zon', import.meta.url), 'utf8')
+  assert.ok(
+    zon.includes(`.version = "${pkg.version}"`),
+    `zig/build.zig.zon does not declare version ${pkg.version}`,
+  )
+})
+
+test('the pinned header packages are the versions that were tested', () => {
+  // Reading them back from disk catches a package.json edit that was never
+  // installed, and an install that resolved to something else.
+  const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  for (const name of ['node-addon-api', 'node-api-headers']) {
+    const installed = JSON.parse(
+      fs.readFileSync(new URL(`../node_modules/${name}/package.json`, import.meta.url), 'utf8'),
+    )
+    assert.equal(installed.version, pkg.dependencies[name], `${name} on disk differs from the pin`)
+    // Neither may grow a dependency tree: that is the reason both are
+    // acceptable dependencies of a build tool in the first place.
+    assert.deepEqual(Object.keys(installed.dependencies ?? {}), [])
+  }
+})
+
+test('node-addon-api still supports the Node versions this package claims', () => {
+  // Pinning forwards is only safe while the header package still runs on the
+  // oldest Node in `engines`. When that stops being true, the pin has to stop
+  // moving, or `engines` has to.
+  const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  const addonApi = JSON.parse(
+    fs.readFileSync(
+      new URL('../node_modules/node-addon-api/package.json', import.meta.url),
+      'utf8',
+    ),
+  )
+  const ourMajor = Number(/(\d+)/.exec(pkg.engines.node)[1])
+  assert.match(
+    addonApi.engines.node,
+    new RegExp(`\\b${ourMajor}\\b`),
+    `node-addon-api ${addonApi.version} does not list Node ${ourMajor}: ${addonApi.engines.node}`,
+  )
 })
 
 test('findUp stops at the filesystem root instead of looping', () => {

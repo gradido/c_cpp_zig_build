@@ -1,7 +1,7 @@
 // The bindings, written with node-addon-api.
 //
 // node-addon-api is a C++ wrapper over the C Node-API. It is not part of
-// zig-native-build: install it in the project that wants it, and the build
+// c-cpp-zig-build: install it in the project that wants it, and the build
 // picks up its headers automatically.
 //
 //   npm i -D node-addon-api

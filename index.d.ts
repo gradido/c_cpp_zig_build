@@ -1,7 +1,7 @@
 /**
- * zig-native-build — build native C/C++ Node.js modules with Zig.
+ * c-cpp-zig-build — build native C/C++ Node.js modules with Zig.
  *
- * Most projects never import this: `zig-native-build` on the command line is
+ * Most projects never import this: `c-cpp-zig-build` on the command line is
  * the whole interface. The API is here for build scripts that need to compute
  * something before building, or to drive several projects at once.
  */
@@ -96,6 +96,12 @@ export interface Config {
   useSystemZig?: boolean
   /** Fail rather than download anything. */
   offline?: boolean
+  /**
+   * Verify the Zig archive's minisign signature against the Zig project's
+   * public key. On by default; turning it off means trusting whichever mirror
+   * served the download.
+   */
+  verifySignature?: boolean
 
   /** Where the Zig template is copied to. Defaults to `.zig-native`. */
   templateDir?: string

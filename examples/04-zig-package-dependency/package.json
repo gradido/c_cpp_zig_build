@@ -5,7 +5,7 @@
   "description": "A Node addon over zstd, pulled in as a Zig package rather than vendored",
   "main": "./index.cjs",
   "scripts": {
-    "build": "zig-native-build",
+    "build": "c-cpp-zig-build",
     "test": "node --test"
   }
 }

@@ -5,8 +5,8 @@
   "description": "One core C library behind a Node addon, a static library and a CLI",
   "main": "./index.cjs",
   "scripts": {
-    "build": "zig-native-build",
+    "build": "c-cpp-zig-build",
     "test": "node --test",
-    "digest": "zig-native-build --step run --"
+    "digest": "c-cpp-zig-build --step run --"
   }
 }

@@ -4,8 +4,8 @@
     .fingerprint = 0xcb0404b8af25f6e1,
     .minimum_zig_version = "0.15.1",
     .dependencies = .{
-        // Written and kept up to date by `zig-native-build`.
-        .zig_native_build = .{ .path = ".zig-native" },
+        // Written and kept up to date by `c-cpp-zig-build`.
+        .c_cpp_zig_build = .{ .path = ".zig-native" },
     },
     .paths = .{ "build.zig", "build.zig.zon", "src", "napi", "include" },
 }
