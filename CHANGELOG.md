@@ -9,6 +9,45 @@ The Zig template in `zig/` counts as part of the public interface: a change to
 it that an existing project would have to react to is a breaking change, not a
 patch.
 
+## [0.2.1] - 2026-08-25
+
+A dependency whose `build.zig` reads the working directory no longer brings the
+build down. Nothing a project writes has to change.
+
+### Fixed
+
+- **A package is resolved with its own directory as the working directory.**
+  A build script is meant to reach its own files through `b.path()` and
+  `b.build_root.handle`; plenty of published ones reach for `std.fs.cwd()`
+  instead, and standalone the two are the same directory, so nothing says
+  otherwise until someone depends on the package. `zig build` never changes
+  directory, so a dependency's build script ran with the *consumer's* project
+  root current — and one that lists its sources with
+  `std.fs.cwd().openDir("src")` then walked the consumer's `src/`, or panicked
+  with `FileNotFound` where the consumer had none, before a single file was
+  compiled.
+  - The failure named a directory in the wrong project, and nothing a consumer
+    could write reached the dependency to fix it.
+  - `Artifact.dependency`, `linkDependency`, `linkDependencyWith` and
+    `addDependencyIncludePath` all go through the new resolution, so an
+    existing project gets it without changing a line.
+  - The window is the `b.dependency()` call itself. Build scripts declare steps
+    and nothing more, every step runs long afterwards, and the paths handed out
+    in between are `LazyPath`s anchored to a package or absolute — none of them
+    read while the directory is moved.
+  - A dependency of the dependency is resolved with the dependency's directory
+    current rather than its own, since it goes through Zig's `b.dependency()`
+    rather than through the template's.
+
+### Added
+
+- **`czb.dependency(b, name, args)`**, the same resolution for a package a
+  build script resolves by hand instead of through an artifact.
+- **`examples/05-dependency-reading-cwd`**, which is the regression test: a
+  local path dependency that makes the mistake on purpose, in a project with no
+  `src/` of its own for it to land in. Its tests assert both halves of that
+  fixture, so neither can be tidied away without the example saying so.
+
 ## [0.2.0] - 2026-08-19
 
 The package was renamed in this release. Nothing was published under the old

@@ -1,0 +1,12 @@
+{
+  "name": "tally-addon-example",
+  "version": "1.0.0",
+  "private": true,
+  "description": "An addon whose dependency reads the working directory, built with c-cpp-zig-build",
+  "main": "./index.cjs",
+  "scripts": {
+    "build": "c-cpp-zig-build",
+    "build:debug": "c-cpp-zig-build --debug",
+    "test": "node --test"
+  }
+}

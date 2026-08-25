@@ -1,7 +1,7 @@
 .{
     // Consumed as `@import("c_cpp_zig_build")` from a project's build.zig.
     .name = .c_cpp_zig_build,
-    .version = "0.2.0",
+    .version = "0.2.1",
     .fingerprint = 0xb623d410f2fa94b4,
     .minimum_zig_version = "0.15.1",
 

@@ -342,6 +342,16 @@ pub fn build(b: *std.Build) !void {
 All four take the same `Options` and return the same `Artifact`. Call as many
 as you like in one build script.
 
+One function stands apart from them:
+
+| Function | Produces |
+|---|---|
+| `dependency(b, name, args)` | a `*std.Build.Dependency`, resolved in the package's own directory |
+
+Reach for it in place of `b.dependency()` when you resolve a package by hand
+rather than through an artifact — see
+[example 5](examples/05-dependency-reading-cwd) for what it is for.
+
 ### Options
 
 Only `name` is required.
@@ -489,7 +499,12 @@ addon.linkDependency("zstd", "zstd");   // dependency name, artifact name
 
 `linkDependency` resolves the package with the artifact's own target and
 optimisation mode, so `--target aarch64-macos` cross compiles zstd too. The
-package's installed headers come with it — no include path to add.
+package's installed headers come with it — no include path to add. It also
+resolves the package with *its own* directory as the working directory, which
+is what keeps a dependency that reads `std.fs.cwd()` from looking for its
+sources in your project; for a package you resolve by hand, use
+`czb.dependency(b, "zstd", .{})` rather than `b.dependency` to get the same
+treatment. [Example 5](examples/05-dependency-reading-cwd) is that case.
 
 A working example is in [`examples/04-zig-package-dependency`](examples/04-zig-package-dependency).
 Many C libraries have a Zig package under
@@ -787,6 +802,7 @@ Each directory is a complete, working project.
 | [`02-cpp-node-addon-api`](examples/02-cpp-node-addon-api) | C++ with `node-addon-api`, exceptions crossing into JS |
 | [`03-library-cli-and-addon`](examples/03-library-cli-and-addon) | one core library behind an addon, a static library and a CLI, plus a `third_party/` file drop with its own flags |
 | [`04-zig-package-dependency`](examples/04-zig-package-dependency) | linking zstd as a Zig package — nothing vendored |
+| [`05-dependency-reading-cwd`](examples/05-dependency-reading-cwd) | a dependency whose `build.zig` reads the working directory, and why it still builds |
 
 To run them from a clone of this repository:
 
@@ -957,6 +973,16 @@ replaced `addNodeAddon` with a hand-written compile step, set
 **`building a Windows addon needs an import library`**
 Only when you run `zig build` by hand. Through the CLI, `node.lib` is
 downloaded automatically.
+
+**A dependency panics with `FileNotFound` on a directory of yours**
+A package whose `build.zig` reaches for `std.fs.cwd()` rather than
+`b.build_root.handle` is looking for its own sources in your project.
+`linkDependency` and `dependency` already resolve a package with its own
+directory current, so this should not reach you — if it does, the resolution
+went through `b.dependency()` directly. Route it through
+[`czb.dependency(b, name, args)`](#adding-dependencies) instead, and see
+[example 5](examples/05-dependency-reading-cwd). The package is still worth a
+pull request.
 
 **The addon does not reflect my changes**
 `c-cpp-zig-build clean` then build again. If that fixes it, the build cache

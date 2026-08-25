@@ -1,6 +1,6 @@
 # Examples
 
-Four complete, working projects. Each is buildable on its own and each teaches
+Five complete, working projects. Each is buildable on its own and each teaches
 one thing.
 
 | | Example | Language | Shows |
@@ -9,6 +9,7 @@ one thing.
 | 2 | [`02-cpp-node-addon-api`](02-cpp-node-addon-api) | C++ | `node-addon-api`, automatic libc++, exceptions crossing into JS |
 | 3 | [`03-library-cli-and-addon`](03-library-cli-and-addon) | C | one core behind an addon, a static library and a CLI; a `third_party/` file drop with its own flags |
 | 4 | [`04-zig-package-dependency`](04-zig-package-dependency) | C | linking zstd as a Zig package — nothing vendored |
+| 5 | [`05-dependency-reading-cwd`](05-dependency-reading-cwd) | C | a dependency whose `build.zig` reads the working directory, and why it still builds |
 
 ## Running them
 
@@ -29,7 +30,8 @@ Example 2 declares its own `node-addon-api`, so run `npm install` there first
 — it would build without it, using the copy that ships with the build tool,
 but the point of the example is to pin the version.
 
-Example 4 needs network access on its first build, to fetch zstd.
+Example 4 needs network access on its first build, to fetch zstd. Example 5
+fetches nothing: its dependency is a local path.
 
 ## Using one as a starting point
 
