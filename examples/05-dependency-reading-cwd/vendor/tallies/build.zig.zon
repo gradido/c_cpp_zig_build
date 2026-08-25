@@ -1,0 +1,8 @@
+.{
+    .name = .tallies,
+    .version = "1.0.0",
+    .fingerprint = 0xfd516a857334587a,
+    .minimum_zig_version = "0.15.1",
+    .dependencies = .{},
+    .paths = .{ "build.zig", "build.zig.zon", "src", "include" },
+}

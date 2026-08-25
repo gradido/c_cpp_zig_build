@@ -1,7 +1,7 @@
 {
   "name": "c-cpp-zig-build",
-  "version": "0.2.0",
-  "description": "Build native C/C++ Node.js addons and libraries with Zig — downloads the Zig toolchain and the Node headers for you, and ships a build.zig template that configures a whole project from a handful of parameters.",
+  "version": "0.2.1",
+  "description": "Build native C/C++ Node.js addons and libraries with Zig \u2014 downloads the Zig toolchain and the Node headers for you, and ships a build.zig template that configures a whole project from a handful of parameters.",
   "type": "module",
   "main": "./lib/index.js",
   "types": "./index.d.ts",

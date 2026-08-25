@@ -174,7 +174,7 @@ pub const Artifact = struct {
         inline for (extra_fields) |field| {
             @field(merged, field.name) = @field(extra, field.name);
         }
-        return self.b.dependency(dep_name, merged);
+        return resolveDependency(self.b, dep_name, merged);
     }
 
     /// Links a library from a `build.zig.zon` dependency.
@@ -290,6 +290,104 @@ pub fn standardOptions(b: *std.Build) struct {
 } {
     const ctx = context(b);
     return .{ .target = ctx.target, .optimize = ctx.optimize };
+}
+
+/// `b.dependency()`, with the package's own directory as the working directory
+/// while its build script runs.
+///
+/// Use this in place of `b.dependency()` for a package resolved by hand;
+/// `Artifact.dependency()` and everything built on it already go through here.
+///
+/// ### Why a build script needs this
+///
+/// A build script is supposed to reach its own files through `b.path()` and
+/// `b.build_root.handle`, both of which are anchored to the package. Plenty
+/// reach for `std.fs.cwd()` instead, and standalone the two are the same
+/// directory, so nothing says otherwise until the day someone depends on the
+/// package: `zig build` never changes directory, so the working directory
+/// throughout is the *consumer's* project root. A package that lists its own
+/// sources with `std.fs.cwd().openDir("src")` then walks the consumer's `src/`
+/// — or, where the consumer has none, panics with `FileNotFound` before a
+/// single file is compiled, whatever the consumer actually wanted from it.
+///
+/// Nothing a consumer can do about that reaches the dependency, and the failure
+/// names a directory in the wrong project, which is a hard afternoon. So the
+/// directory is put where such a package assumes it is, for as long as its
+/// build script runs, and put back afterwards.
+///
+/// The window is the `b.dependency()` call itself: build scripts declare steps
+/// and nothing more, and every step runs later, long after this has returned.
+/// Paths handed out in between are `LazyPath`s anchored to a package or
+/// absolute, and neither is read now.
+///
+/// A dependency of the dependency is resolved with the *dependency's*
+/// directory current rather than its own, since it goes through Zig's
+/// `b.dependency()` rather than through this. Still nearer than the consumer's
+/// root, and one level is as far as guessing is worth taking.
+pub fn dependency(b: *std.Build, dep_name: []const u8, args: anytype) *std.Build.Dependency {
+    return resolveDependency(b, dep_name, args);
+}
+
+/// The implementation of both `dependency()` and `Artifact.dependency()`, named
+/// apart from either: inside `Artifact` the method shadows the free function,
+/// and Zig calls a reference to the two of them ambiguous rather than guessing.
+fn resolveDependency(b: *std.Build, dep_name: []const u8, args: anytype) *std.Build.Dependency {
+    const previous = enterPackageDirectory(b, dep_name);
+    defer leavePackageDirectory(b, previous);
+    return b.dependency(dep_name, args);
+}
+
+/// Makes @p dep_name's directory current, and answers the one that was, or
+/// null when nothing was changed and nothing has to be put back.
+///
+/// Every failure here answers null: this is a courtesy to badly behaved
+/// dependencies, and a package that does not need it must not be denied a
+/// build because the courtesy could not be extended.
+fn enterPackageDirectory(b: *std.Build, dep_name: []const u8) ?[]const u8 {
+    const build_root = packageBuildRoot(b, dep_name) orelse return null;
+
+    // Read rather than taken from `b.build_root`, which may be relative — and a
+    // relative path is no way back once the directory has moved.
+    const previous = std.process.getCwdAlloc(b.allocator) catch return null;
+    std.process.changeCurDir(build_root) catch {
+        b.allocator.free(previous);
+        return null;
+    };
+    return previous;
+}
+
+fn leavePackageDirectory(b: *std.Build, previous: ?[]const u8) void {
+    const path = previous orelse return;
+    // Loud, and rightly so: everything after this would run somewhere the rest
+    // of the build has no idea about.
+    std.process.changeCurDir(path) catch |err| std.debug.panic(
+        "c-cpp-zig-build: cannot return to '{s}' after resolving a dependency: {s}",
+        .{ path, @errorName(err) },
+    );
+    b.allocator.free(path);
+}
+
+/// Where a declared dependency was fetched to, or null when it cannot be said —
+/// an undeclared name, or a lazy package nobody has fetched yet. Both are left
+/// for `b.dependency()` to report in its own words.
+fn packageBuildRoot(b: *std.Build, dep_name: []const u8) ?[]const u8 {
+    const build_runner = @import("root");
+    const deps = build_runner.dependencies;
+
+    const pkg_hash = for (b.available_deps) |dep| {
+        if (std.mem.eql(u8, dep[0], dep_name)) break dep[1];
+    } else return null;
+
+    inline for (@typeInfo(deps.packages).@"struct".decls) |decl| {
+        if (std.mem.eql(u8, decl.name, pkg_hash)) {
+            const pkg = @field(deps.packages, decl.name);
+            // `available` marks a lazy package; an unfetched one has no
+            // directory to enter.
+            if (@hasDecl(pkg, "available") or !@hasDecl(pkg, "build_root")) return null;
+            return pkg.build_root;
+        }
+    }
+    return null;
 }
 
 // ---------------------------------------------------------------------------
