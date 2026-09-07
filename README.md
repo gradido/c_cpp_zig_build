@@ -713,7 +713,7 @@ A DLL may not have undefined symbols, so a Windows addon must link an import
 library for the Node-API. It is built locally, from the `node_api.def` that
 `node-api-headers` ships:
 
-```
+```bash
 zig dlltool -m i386:x86-64 -D node.exe -d node_api.def -l node_api.lib
 ```
 
@@ -1115,6 +1115,7 @@ has the full layout and ground rules.
 npm install
 npm test              # unit tests
 npm run test:examples # builds and tests all six examples
+npm run test:windows  # cross compiles and checks the Windows import libraries
 npm run lint          # Biome
 npm run fmt:check     # zig fmt, for the Zig template
 ```

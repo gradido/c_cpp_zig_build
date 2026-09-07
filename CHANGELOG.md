@@ -133,6 +133,14 @@ Under turbo or in CI it is five log lines instead, one per fifth of the
 
 ### Added
 
+- **`npm run test:windows`**, which cross compiles an addon for
+  `x86_64-windows` and `aarch64-windows` and reads the result back: both are PE
+  files, the Node addon's import table names `node.exe`, the Bun addon's names
+  `bun.exe`, and neither reaches for a downloaded `node.lib`. The Windows link
+  step is three pieces deep — a `.def` file, `zig dlltool`, the import library
+  — and none of it ran on a Linux or macOS build, so a break in it used to
+  surface only on somebody's Windows machine. On a Windows host the test also
+  loads the addon and calls into it.
 - **`examples/06-turborepo`**, a two-package turborepo whose build outputs are
   produced by this tool. It answers, as an executable check, whether a compiled
   `.node` file survives turbo's cache: it does, provided `turbo.json` names the

@@ -318,6 +318,7 @@ examples/           six complete projects, all of which must keep building
                     (06-turborepo is a workspace, driven by its own scripts)
 tests/              node --test
 scripts/            test-examples.mjs — builds and tests every example
+                    test-windows.mjs — cross compiles and inspects the PE
 index.d.ts          hand-written types for the JavaScript API
 ```
 
@@ -377,6 +378,7 @@ Before proposing a change:
 npm run lint
 node --test tests/
 npm run test:examples   # every example, through its own build and test scripts
+npm run test:windows    # the Windows import libraries, by cross compiling
 node lib/cli.js zig -- fmt --check zig/build.zig zig/src/
 ```
 
