@@ -1,13 +1,20 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 
 import { resolveConfig } from '../lib/config.js'
-import { findUp, toIdentifier } from '../lib/fsutil.js'
-import { detectHostTriple, detectNodeVersion, nodeWindowsArch } from '../lib/host.js'
-import { resolveNodeAddonApi, resolveNodeApiHeaders } from '../lib/node-headers.js'
+import { chooseExtractor, expandArchive, extractArchive, withLock } from '../lib/download.js'
+import { toIdentifier } from '../lib/fsutil.js'
+import { detectHostTriple } from '../lib/host.js'
+import { progressTarget } from '../lib/log.js'
+import {
+  resolveNodeAddonApi,
+  resolveNodeApiHeaders,
+  resolveNodeHeaders,
+} from '../lib/node-headers.js'
 import { fingerprint } from '../lib/scaffold.js'
 import { packagedTemplateDir } from '../lib/template.js'
 
@@ -42,20 +49,6 @@ test('fingerprint ids vary, so forks do not collide', () => {
 
 test('the host triple is one Zig understands', async () => {
   assert.match(await detectHostTriple(), /^[a-z0-9_]+-[a-z]+(-[a-z0-9]+)?$/)
-})
-
-test('nodeWindowsArch maps triples to nodejs.org directories', () => {
-  assert.equal(nodeWindowsArch('x86_64-windows'), 'win-x64')
-  assert.equal(nodeWindowsArch('aarch64-windows'), 'win-arm64')
-  assert.throws(() => nodeWindowsArch('x86_64-linux-gnu'))
-})
-
-test('a .nvmrc pins the Node version, an alias does not', () => {
-  const pinned = tempProject({ '.nvmrc': 'v20.11.1\n' })
-  assert.equal(detectNodeVersion(pinned), '20.11.1')
-
-  const alias = tempProject({ '.nvmrc': 'lts/*\n' })
-  assert.equal(detectNodeVersion(alias), process.versions.node)
 })
 
 test('an addon is detected from a napi/ directory', async () => {
@@ -129,6 +122,287 @@ test('targets accept a string, an array and a map', async () => {
   assert.equal(named.targets.legacy.glibc, '2.28')
 })
 
+test('a zip is never handed to GNU tar', () => {
+  // Two separate Windows facts, both of which bit: GNU tar cannot read a zip
+  // at all, and it reads `C:\...` as `host:path` and tries to open a network
+  // connection — `tar: Cannot connect to C: resolve failed`. A Git Bash or
+  // MSYS2 shell puts its own GNU tar ahead of the bsdtar Windows ships, so
+  // this is the `tar` a build finds there.
+  const gnuOnWindows = {
+    flavour: 'gnu',
+    systemTar: 'C:\\Windows\\System32\\tar.exe',
+    windows: true,
+  }
+
+  // Reach past the GNU tar on PATH to the bsdtar in System32.
+  assert.deepEqual(chooseExtractor({ archive: 'zig.zip', ...gnuOnWindows }), {
+    kind: 'tar',
+    exe: 'C:\\Windows\\System32\\tar.exe',
+    forceLocal: false,
+  })
+
+  // Before 1803 there is no bsdtar to reach for, so PowerShell it is.
+  assert.deepEqual(
+    chooseExtractor({ archive: 'zig.zip', flavour: 'gnu', systemTar: undefined, windows: true }),
+    { kind: 'expand-archive' },
+  )
+
+  // Off Windows there is no fallback, so say so rather than let GNU tar fail
+  // with "this does not look like a tar archive".
+  assert.deepEqual(
+    chooseExtractor({ archive: 'x.zip', flavour: 'gnu', systemTar: undefined, windows: false }),
+    { kind: 'none' },
+  )
+})
+
+test('GNU tar gets --force-local on Windows, bsdtar never does', () => {
+  // `--force-local` is what stops `C:\...` being read as a remote host.
+  // bsdtar does not need it and does not accept it.
+  assert.equal(
+    chooseExtractor({ archive: 'x.tar.gz', flavour: 'gnu', windows: true }).forceLocal,
+    true,
+  )
+  assert.equal(
+    chooseExtractor({ archive: 'x.tar.gz', flavour: 'bsdtar', windows: true }).forceLocal,
+    false,
+  )
+  assert.equal(
+    chooseExtractor({ archive: 'x.tar.xz', flavour: 'gnu', windows: false }).forceLocal,
+    false,
+  )
+})
+
+test('PowerShell unpacks a zip from a path it would otherwise treat as a pattern', {
+  skip:
+    process.platform === 'win32'
+      ? false
+      : 'Expand-Archive, and its quoting rules, exist only on Windows',
+}, async () => {
+  // The branch under test is unreachable through extractArchive on a modern
+  // Windows — chooseExtractor prefers the bsdtar in System32 — so it is called
+  // directly.
+  //
+  // Both paths get the awkward name, because both used to break: `[1]` is a
+  // character class to PowerShell's provider parsing and the apostrophe closes
+  // a quoted literal. `Expand-Archive` could only be told to take the archive
+  // literally, never the destination, which is why the unpacking goes through
+  // .NET's ZipFile instead — it takes plain strings and parses neither.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'czb-ps-'))
+  const awkward = path.join(dir, "o'brien [1]")
+  fs.mkdirSync(path.join(awkward, 'src', 'pkg-1.0.0', 'lib'), { recursive: true })
+  fs.writeFileSync(path.join(awkward, 'src', 'pkg-1.0.0', 'run.txt'), 'binary\n')
+  fs.writeFileSync(path.join(awkward, 'src', 'pkg-1.0.0', 'lib', 'a.txt'), 'a\n')
+
+  const zip = path.join(awkward, 'pkg.zip')
+  const made = spawnSync(
+    'powershell',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      "$ProgressPreference = 'SilentlyContinue';" +
+        ' Compress-Archive -LiteralPath $env:CZB_SRC -DestinationPath $env:CZB_ZIP -Force',
+    ],
+    {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CZB_SRC: path.join(awkward, 'src', 'pkg-1.0.0'),
+        CZB_ZIP: zip,
+      },
+    },
+  )
+  assert.equal(made.status, 0, `could not build the fixture:\n${made.stdout}${made.stderr}`)
+
+  const out = path.join(awkward, 'out')
+  await expandArchive(zip, out, 1)
+
+  assert.ok(fs.existsSync(path.join(out, 'run.txt')), 'the top level should be stripped')
+  assert.equal(fs.readFileSync(path.join(out, 'lib', 'a.txt'), 'utf8'), 'a\n')
+  assert.ok(!fs.existsSync(`${out}.staging`), 'the staging directory should be gone')
+})
+
+test('extractArchive unpacks a tarball and strips its top level', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'czb-tar-'))
+  fs.mkdirSync(path.join(dir, 'src', 'pkg-1.0.0', 'lib'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'src', 'pkg-1.0.0', 'run'), 'binary\n')
+  fs.writeFileSync(path.join(dir, 'src', 'pkg-1.0.0', 'lib', 'a.txt'), 'a\n')
+  // Building the fixture is not the thing under test, so its failure has to
+  // report as its own. A bare `tar` is GNU tar in Git Bash, which reads the
+  // drive letter as a host name: without --force-local no archive is written,
+  // and the extraction below fails with a confusing "cannot open" instead.
+  const made = spawnSync('tar', [
+    '-czf',
+    path.join(dir, 'pkg.tar.gz'),
+    '-C',
+    path.join(dir, 'src'),
+    'pkg-1.0.0',
+    ...(process.platform === 'win32' ? ['--force-local'] : []),
+  ])
+  assert.equal(made.status, 0, `could not build the fixture: ${made.stderr}`)
+
+  const out = path.join(dir, 'out')
+  await extractArchive(path.join(dir, 'pkg.tar.gz'), out, { stripComponents: 1 })
+  assert.ok(fs.existsSync(path.join(out, 'run')), 'the top-level directory should be stripped')
+  assert.equal(fs.readFileSync(path.join(out, 'lib', 'a.txt'), 'utf8'), 'a\n')
+})
+
+test('a supervised build gets lines, not a bar it cannot own', () => {
+  // turbo and CI write to the terminal line by line whenever they please. A bar
+  // repainting between those lines overwrites them, and its closing erase takes
+  // whatever shared the line. Zig's own progress display switches itself off in
+  // exactly this situation; this switches to lines.
+  assert.deepEqual(progressTarget({ stdout: { isTTY: true }, env: {} }), { repaint: true })
+
+  for (const env of [{ TURBO_HASH: 'b8f7' }, { CI: '1' }, { NO_COLOR: '1' }]) {
+    assert.deepEqual(progressTarget({ stdout: { isTTY: true }, env }), { repaint: false })
+  }
+  assert.deepEqual(progressTarget({ stdout: { isTTY: false }, env: {} }), { repaint: false })
+
+  assert.deepEqual(
+    progressTarget({ stdout: { isTTY: true }, env: { C_CPP_ZIG_BUILD_PROGRESS: 'lines' } }),
+    { repaint: false },
+  )
+  assert.deepEqual(
+    progressTarget({ stdout: { isTTY: true }, env: { C_CPP_ZIG_BUILD_PROGRESS: 'off' } }),
+    { repaint: false, silent: true },
+  )
+})
+
+test('a download with no terminal to draw on reports progress in the log', async () => {
+  // Run in a child process on purpose: what matters is what reaches a pipe,
+  // which is what turbo and CI see. Not every community mirror sends a
+  // Content-Length, and one that streams the archive chunked cannot, so the
+  // size from the Zig index is passed in and preferred over the header.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'czb-bar-'))
+  const script = path.join(dir, 'download.mjs')
+  const downloadUrl = new URL('../lib/download.js', import.meta.url).href
+  fs.writeFileSync(
+    script,
+    `import http from 'node:http'
+     import { downloadFile } from ${JSON.stringify(downloadUrl)}
+     const size = 512 * 1024
+     const body = Buffer.alloc(size, 7)
+     const server = http.createServer((_req, res) => {
+       res.writeHead(200, { 'Content-Type': 'application/octet-stream' }) // chunked: no length
+       let sent = 0
+       const tick = setInterval(() => {
+         if (sent >= size) { clearInterval(tick); res.end(); return }
+         res.write(body.subarray(sent, sent + size / 16))
+         sent += size / 16
+       }, 5)
+     })
+     await new Promise((r) => server.listen(0, '127.0.0.1', r))
+     const url = \`http://127.0.0.1:\${server.address().port}/zig.zip\`
+     await downloadFile(url, ${JSON.stringify(path.join(dir, 'a.zip'))}, {
+       label: 'zig.zip',
+       size,
+     })
+     server.close()
+    `,
+  )
+
+  // CI=1 is what the tool reads as "nobody is watching this live", the same as
+  // turbo's own marker. Without it a developer running the suite in a terminal
+  // would get the repainting bar, and this pipe would see none of it.
+  const { status, stdout } = spawnSync(process.execPath, [script], {
+    encoding: 'utf8',
+    env: { ...process.env, CI: '1' },
+  })
+  assert.equal(status, 0, stdout)
+
+  const percentages = [...stdout.matchAll(/zig\.zip \[[#-]{24}\] (\d+)%/g)].map((m) => Number(m[1]))
+  // A known size is what makes a bar possible at all; without one the output
+  // degrades to counting megabytes.
+  assert.ok(percentages.length >= 5, `expected progress lines, got:\n${stdout}`)
+  // One line per fifth keeps a supervised log short, and the last must reach
+  // 100%, not stop at 80% where the final chunk happens to land.
+  assert.equal(percentages.at(-1), 100, `progress should end at 100%:\n${stdout}`)
+  assert.deepEqual(
+    percentages,
+    [...percentages].sort((a, b) => a - b),
+    'progress should only ever move forwards',
+  )
+})
+
+/**
+ * Backdates a lock file so its age is a fact rather than an accident.
+ *
+ * The alternative — a freshly written file and `staleAfterMs: 0` — leans on
+ * `Date.now() - stat.mtimeMs` coming out strictly positive, which a filesystem
+ * with second-granularity timestamps, or a clock that disagrees slightly with
+ * the one the kernel stamped it with, is free not to do.
+ */
+function backdate(lock, ms) {
+  const when = new Date(Date.now() - ms)
+  fs.utimesSync(lock, when, when)
+}
+
+test('a lock left behind by a dead process is taken over, not waited on', async () => {
+  // `finally` does not run when a build is killed with Ctrl+C, so an
+  // interrupted download leaves its lock. Waiting it out was a ten-minute hang
+  // with no output and no CPU — indistinguishable from a crash.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'czb-lock-'))
+  const lock = path.join(dir, '.zig.lock')
+  fs.writeFileSync(lock, '99999999') // a pid that cannot be running
+
+  const started = Date.now()
+  assert.equal(await withLock(lock, async () => 'ran', { timeoutMs: 5000 }), 'ran')
+  assert.ok(Date.now() - started < 1000, 'a dead owner should not be waited on at all')
+  assert.ok(!fs.existsSync(lock), 'the lock should be released afterwards')
+})
+
+test('a lock held by a living process is respected, however old it is', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'czb-lock-'))
+  const lock = path.join(dir, '.zig.lock')
+  fs.writeFileSync(lock, String(process.pid)) // alive by definition
+
+  await assert.rejects(
+    () => withLock(lock, async () => 'ran', { timeoutMs: 400 }),
+    /timed out waiting for lock/,
+  )
+  assert.ok(fs.existsSync(lock), "someone else's lock must not be deleted")
+
+  // Age must not override that. A first build on a slow link holds the lock for
+  // as long as the toolchain takes to arrive, which outlasts any age limit
+  // worth setting; taking it away would put two extractions in one directory.
+  backdate(lock, 5 * 60_000)
+  await assert.rejects(
+    () => withLock(lock, async () => 'ran', { timeoutMs: 400, staleAfterMs: 60_000 }),
+    /timed out waiting for lock/,
+  )
+  assert.ok(fs.existsSync(lock), 'an old lock whose owner is alive is still theirs')
+})
+
+test('a lock that names nobody is the one case age decides', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'czb-lock-'))
+  const lock = path.join(dir, '.zig.lock')
+
+  // Written by a build that died between creating the file and naming itself.
+  // There is nobody to ask whether it is still wanted, so it is waited out and
+  // then taken.
+  fs.writeFileSync(lock, '')
+  backdate(lock, 5 * 60_000)
+  assert.equal(
+    await withLock(lock, async () => 'ran', { timeoutMs: 5000, staleAfterMs: 60_000 }),
+    'ran',
+  )
+
+  fs.writeFileSync(lock, 'not a pid')
+  backdate(lock, 5 * 60_000)
+  assert.equal(
+    await withLock(lock, async () => 'ran', { timeoutMs: 5000, staleAfterMs: 60_000 }),
+    'ran',
+  )
+
+  // Fresh, and still nameless: waited on rather than taken.
+  fs.writeFileSync(lock, '')
+  await assert.rejects(
+    () => withLock(lock, async () => 'ran', { timeoutMs: 400, staleAfterMs: 60_000 }),
+    /timed out waiting for lock/,
+  )
+})
+
 test('the shipped Zig template is complete', () => {
   const dir = packagedTemplateDir()
   for (const file of [
@@ -160,6 +434,39 @@ test('the bundled header packages are always resolvable', () => {
   assert.ok(fs.existsSync(apiHeaders.nodeApiDef))
 })
 
+test('the Node headers come from node-api-headers, with nothing downloaded', () => {
+  const bare = tempProject({ 'package.json': JSON.stringify({ name: 'bare' }) })
+
+  const headers = resolveNodeHeaders({ root: bare })
+  assert.match(headers.source, /^node-api-headers /)
+  assert.ok(fs.existsSync(path.join(headers.includeDir, 'node_api.h')))
+  // The full Node header set is deliberately not here: an addon reaching for
+  // V8 directly is pinned to one Node build, which Node-API exists to avoid.
+  assert.ok(!fs.existsSync(path.join(headers.includeDir, 'v8.h')))
+})
+
+test('an explicit nodeHeaders directory wins, and is checked', () => {
+  const project = tempProject({
+    'package.json': JSON.stringify({ name: 'own-headers' }),
+    'vendor/include/node_api.h': '/* pretend */\n',
+    'vendor/empty/.keep': '',
+  })
+
+  const headers = resolveNodeHeaders({ root: project, nodeHeaders: 'vendor/include' })
+  assert.equal(headers.source, 'configured')
+  assert.equal(headers.includeDir, path.join(project, 'vendor', 'include'))
+
+  // A silent fallback to the bundled headers would compile the wrong thing.
+  assert.throws(
+    () => resolveNodeHeaders({ root: project, nodeHeaders: 'vendor/nowhere' }),
+    /missing directory/,
+  )
+  assert.throws(
+    () => resolveNodeHeaders({ root: project, nodeHeaders: 'vendor/empty' }),
+    /no node_api\.h/,
+  )
+})
+
 test('a package the project declares is reported as its own', () => {
   // Declaration is read from package.json, not inferred from where the file
   // turned up: npm hoists this package's dependencies into the consumer's
@@ -172,6 +479,18 @@ test('a package the project declares is reported as its own', () => {
   })
   assert.equal(resolveNodeAddonApi(declaring).declared, true)
   assert.equal(resolveNodeApiHeaders(declaring).declared, false)
+})
+
+test('nothing in lib/ reaches for nodejs.org', () => {
+  // Since 0.3.0 the Node-API headers come from `node-api-headers` and the
+  // Windows import library is generated locally from its .def file. Nothing is
+  // fetched from nodejs.org any more, and this is what keeps that true.
+  const dir = new URL('../lib/', import.meta.url)
+  for (const file of fs.readdirSync(dir)) {
+    const source = fs.readFileSync(new URL(file, dir), 'utf8')
+    assert.ok(!source.includes('nodejs.org'), `lib/${file} still references nodejs.org`)
+    assert.ok(!source.includes('node.lib'), `lib/${file} still references node.lib`)
+  }
 })
 
 test('the published manifest is intact', () => {
@@ -248,8 +567,4 @@ test('node-addon-api still supports the Node versions this package claims', () =
     new RegExp(`\\b${ourMajor}\\b`),
     `node-addon-api ${addonApi.version} does not list Node ${ourMajor}: ${addonApi.engines.node}`,
   )
-})
-
-test('findUp stops at the filesystem root instead of looping', () => {
-  assert.equal(findUp(os.tmpdir(), 'this-file-does-not-exist-anywhere'), undefined)
 })

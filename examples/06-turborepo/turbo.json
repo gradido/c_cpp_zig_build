@@ -1,6 +1,13 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "ui": "stream",
+  "globalEnv": ["ZIG_EXE"],
+  "globalPassThroughEnv": [
+    "C_CPP_ZIG_BUILD_HOME",
+    "C_CPP_ZIG_BUILD_PROGRESS",
+    "C_CPP_ZIG_BUILD_DEBUG",
+    "ZIG_MIRROR"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

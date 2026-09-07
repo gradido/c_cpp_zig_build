@@ -25,6 +25,14 @@ bun run test        # or: npm test
 Each also has `bun run build:debug`, `bun run info` (what the build would use)
 and `bun run clean` (undo everything a build wrote).
 
+**With Bun, keep the `run`.** `build`, `test` and `info` are all Bun
+sub-commands of their own, and a bare `bun <name>` runs Bun's rather than the
+script — `bun info` asks the npm registry about a package that was never
+published (`404 Not Found: …/minimal-addon-example`), and `bun test` looks for
+its own test files and finds none. `bun run info` and `bun run test` do what
+you meant. npm has no such collision: `npm test` and `npm run test` are the
+same thing.
+
 Their scripts call `node ../../lib/cli.js` rather than the `c-cpp-zig-build`
 command, on purpose: that is the copy of the build tool sitting two directories
 up, so an example always exercises this checkout and never a release from npm.
@@ -49,6 +57,8 @@ fetches nothing: its dependency is a local path.
 Example 6 is a workspace rather than a single project, so its `build` and
 `test` scripts run `turbo` instead of the build tool directly; the addon it
 contains is built the same way as every other example, two directories deeper.
+It also has `bun run clear`, which resets it — turbo's cache included — so the
+first build can be watched more than once.
 
 The first build of any of them downloads the Zig toolchain into `~/.zig-build`,
 which takes a minute; every build after that is fast.

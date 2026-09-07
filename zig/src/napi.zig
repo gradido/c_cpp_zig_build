@@ -3,14 +3,13 @@
 //! On Linux and macOS the `napi_*` symbols stay undefined in the addon and are
 //! resolved by the process that loads it. Windows does not allow a DLL with
 //! undefined symbols, so the addon must be linked against an import library
-//! for the host executable. There are two ways to get one, and this file
-//! implements both:
+//! for the host executable.
 //!
-//!   * from `node.lib`, published by nodejs.org and downloaded by the build
-//!     helper — exactly what node-gyp does; or
-//!   * from a `.def` file, turned into an import library by `zig dlltool`.
-//!     This is the only route that works for Bun, whose exports live in
-//!     `bun.exe` rather than `node.exe`.
+//! One is built here, from the module definition file that `node-api-headers`
+//! ships, using `zig dlltool`. It needs no download, and unlike a `node.lib`
+//! from nodejs.org it works for Bun too: the same `.def` produces an import
+//! library against `bun.exe` as readily as against `node.exe`, which is what
+//! lets a single build serve both runtimes.
 
 const std = @import("std");
 
@@ -40,10 +39,4 @@ pub fn importLibraryFromDef(
     dlltool.addFileArg(.{ .cwd_relative = def_path });
     dlltool.addArg("-l");
     return dlltool.addOutputFileArg(b.fmt("{s}_api.lib", .{std.fs.path.stem(host_executable)}));
-}
-
-/// True when this target loads addons the way Node does — that is, everywhere
-/// except Windows, where an import library is required.
-pub fn resolvesSymbolsAtLoad(target: std.Build.ResolvedTarget) bool {
-    return target.result.os.tag != .windows;
 }
