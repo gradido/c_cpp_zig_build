@@ -46,7 +46,15 @@ rather than being the default.
 
 [`clear.mjs`](clear.mjs) is worth a glance on its own: the list of paths in it
 is the complete inventory of what a turborepo build with a native addon leaves
-behind.
+behind. Two of its decisions were learned the hard way on Windows:
+
+- **`.turbo/cache`, not all of `.turbo`.** The daemon keeps its log files in
+  `.turbo/daemon` and holds them open; removing those fails with `EPERM` or
+  `ENOTEMPTY` and takes the script down with it. They also have nothing to do
+  with whether the next run is cold — the cache does.
+- **A file that cannot be removed is reported, not thrown.** You get the path,
+  the reason, and a non-zero exit, rather than a stack trace out of
+  `node:internal/fs/rimraf`.
 
 ## The answer
 
