@@ -1,0 +1,11 @@
+.{
+    .name = .crc32_addon,
+    .version = "1.0.0",
+    .fingerprint = 0xeb2295b4caa48f87,
+    .minimum_zig_version = "0.15.1",
+    .dependencies = .{
+        // Written and kept up to date by `c-cpp-zig-build`.
+        .c_cpp_zig_build = .{ .path = ".zig-native" },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "src", "napi", "include" },
+}

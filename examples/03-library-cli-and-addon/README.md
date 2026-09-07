@@ -20,12 +20,17 @@ One `build.zig` produces all three:
 | static library | `src/` + `third_party/fasthash` | `build/lib/libdigest.a` |
 | CLI | `src/` + `cli/` + `third_party/fasthash` | `build/bin/digest` |
 
+From this directory, with nothing installed:
+
 ```bash
-npm run build
-node --test                                  # the addon
-./build/bin/digest package.json              # the CLI
-npx c-cpp-zig-build --step run -- package.json   # the CLI, via zig build
+bun run build                        # or: npm run build
+bun run test                         # or: npm test — the addon
+./build/bin/digest package.json      # the CLI
+bun run digest -- package.json       # the CLI, via zig build
 ```
+
+The scripts call `node ../../lib/cli.js`, so they use the checkout this
+example lives in rather than a published release.
 
 All three give the same answer for the same input, because they are the same
 code.

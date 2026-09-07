@@ -5,8 +5,11 @@
   "description": "One core C library behind a Node addon, a static library and a CLI",
   "main": "./index.cjs",
   "scripts": {
-    "build": "c-cpp-zig-build",
-    "test": "node --test",
-    "digest": "c-cpp-zig-build --step run --"
+    "build": "node ../../lib/cli.js build",
+    "build:debug": "node ../../lib/cli.js build --debug",
+    "clean": "node ../../lib/cli.js clean",
+    "info": "node ../../lib/cli.js info",
+    "digest": "node ../../lib/cli.js build --step run --",
+    "test": "node --test"
   }
 }

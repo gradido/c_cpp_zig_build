@@ -7,7 +7,7 @@ import test from 'node:test'
 import { resolveConfig } from '../lib/config.js'
 import { findUp, toIdentifier } from '../lib/fsutil.js'
 import { detectHostTriple, detectNodeVersion, nodeWindowsArch } from '../lib/host.js'
-import { resolveNodeAddonApi, resolveNodeApiHeadersPackage } from '../lib/node-headers.js'
+import { resolveNodeAddonApi, resolveNodeApiHeaders } from '../lib/node-headers.js'
 import { fingerprint } from '../lib/scaffold.js'
 import { packagedTemplateDir } from '../lib/template.js'
 
@@ -153,7 +153,7 @@ test('the bundled header packages are always resolvable', () => {
   assert.equal(addonApi.declared, false)
   assert.ok(fs.existsSync(path.join(addonApi.includeDir, 'napi.h')))
 
-  const apiHeaders = resolveNodeApiHeadersPackage(bare)
+  const apiHeaders = resolveNodeApiHeaders(bare)
   assert.ok(apiHeaders, 'node-api-headers should resolve from this package')
   assert.equal(apiHeaders.declared, false)
   // The .def file is the only route to a Bun import library on Windows.
@@ -171,7 +171,7 @@ test('a package the project declares is reported as its own', () => {
     }),
   })
   assert.equal(resolveNodeAddonApi(declaring).declared, true)
-  assert.equal(resolveNodeApiHeadersPackage(declaring).declared, false)
+  assert.equal(resolveNodeApiHeaders(declaring).declared, false)
 })
 
 test('the published manifest is intact', () => {

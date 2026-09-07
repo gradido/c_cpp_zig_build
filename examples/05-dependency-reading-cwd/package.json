@@ -5,8 +5,10 @@
   "description": "An addon whose dependency reads the working directory, built with c-cpp-zig-build",
   "main": "./index.cjs",
   "scripts": {
-    "build": "c-cpp-zig-build",
-    "build:debug": "c-cpp-zig-build --debug",
+    "build": "node ../../lib/cli.js build",
+    "build:debug": "node ../../lib/cli.js build --debug",
+    "clean": "node ../../lib/cli.js clean",
+    "info": "node ../../lib/cli.js info",
     "test": "node --test"
   }
 }

@@ -26,10 +26,17 @@ index.cjs          loads build/minimal_addon.node
 
 ## Build and test
 
+From this directory, with nothing installed:
+
 ```bash
-npm run build
-node --test
+bun run build      # or: npm run build
+bun run test       # or: npm test
 ```
+
+The scripts call `node ../../lib/cli.js`, so they use the checkout this
+example lives in rather than a published release. In a project of your own the
+same scripts read `c-cpp-zig-build`, after `npm install --save-dev
+c-cpp-zig-build` — see [the examples README](../README.md#using-one-as-a-starting-point).
 
 ## Worth noticing
 
@@ -45,5 +52,5 @@ the Node-API. Example 3 takes that further.
 **Cross compiling needs no changes:**
 
 ```bash
-npx c-cpp-zig-build --target aarch64-macos --target x86_64-windows
+node ../../lib/cli.js build --target aarch64-macos --target x86_64-windows
 ```
