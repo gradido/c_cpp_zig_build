@@ -179,11 +179,14 @@ test('PowerShell unpacks a zip from a path it would otherwise treat as a pattern
       : 'Expand-Archive, and its quoting rules, exist only on Windows',
 }, async () => {
   // The branch under test is unreachable through extractArchive on a modern
-  // Windows — chooseExtractor prefers the bsdtar in System32 — so it is
-  // called directly. The directory name carries both hazards at once: `[1]`
-  // is a wildcard to PowerShell's -Path, and the apostrophe closes a
-  // single-quoted literal. Interpolating either into the command string
-  // fails; passing them as data does not.
+  // Windows — chooseExtractor prefers the bsdtar in System32 — so it is called
+  // directly.
+  //
+  // Both paths get the awkward name, because both used to break: `[1]` is a
+  // character class to PowerShell's provider parsing and the apostrophe closes
+  // a quoted literal. `Expand-Archive` could only be told to take the archive
+  // literally, never the destination, which is why the unpacking goes through
+  // .NET's ZipFile instead — it takes plain strings and parses neither.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'czb-ps-'))
   const awkward = path.join(dir, "o'brien [1]")
   fs.mkdirSync(path.join(awkward, 'src', 'pkg-1.0.0', 'lib'), { recursive: true })
@@ -220,15 +223,23 @@ test('PowerShell unpacks a zip from a path it would otherwise treat as a pattern
 })
 
 test('extractArchive unpacks a tarball and strips its top level', async () => {
-  // From a directory whose name carries both hazards the Windows path had:
-  // `[1]` is a wildcard to a shell or to PowerShell's -Path, and the
-  // apostrophe closes a quoted literal. Nothing here builds a command string
-  // out of a path — `run` spawns without a shell — and this is what says so.
-  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'czb-tar-')), "o'brien [1]")
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'czb-tar-'))
   fs.mkdirSync(path.join(dir, 'src', 'pkg-1.0.0', 'lib'), { recursive: true })
   fs.writeFileSync(path.join(dir, 'src', 'pkg-1.0.0', 'run'), 'binary\n')
   fs.writeFileSync(path.join(dir, 'src', 'pkg-1.0.0', 'lib', 'a.txt'), 'a\n')
-  spawnSync('tar', ['-czf', path.join(dir, 'pkg.tar.gz'), '-C', path.join(dir, 'src'), 'pkg-1.0.0'])
+  // Building the fixture is not the thing under test, so its failure has to
+  // report as its own. A bare `tar` is GNU tar in Git Bash, which reads the
+  // drive letter as a host name: without --force-local no archive is written,
+  // and the extraction below fails with a confusing "cannot open" instead.
+  const made = spawnSync('tar', [
+    '-czf',
+    path.join(dir, 'pkg.tar.gz'),
+    '-C',
+    path.join(dir, 'src'),
+    'pkg-1.0.0',
+    ...(process.platform === 'win32' ? ['--force-local'] : []),
+  ])
+  assert.equal(made.status, 0, `could not build the fixture: ${made.stderr}`)
 
   const out = path.join(dir, 'out')
   await extractArchive(path.join(dir, 'pkg.tar.gz'), out, { stripComponents: 1 })

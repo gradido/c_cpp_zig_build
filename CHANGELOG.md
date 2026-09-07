@@ -27,6 +27,15 @@ and a `build.zig` driven by hand with `-Dnode-lib=` stops recognising it.
 
 ### Fixed
 
+- **A Windows without bsdtar could not unpack the toolchain from a path with a
+  bracket or a quote in it.** The zip fallback interpolated both paths into a
+  single-quoted PowerShell literal, which a path like `C:\Users\O'Brien\…`
+  closes early, and passed the archive to `Expand-Archive -Path`, which reads
+  its value as a wildcard pattern. Both paths now travel in the environment,
+  and the unpacking goes through `ZipFile::ExtractToDirectory`, which takes
+  plain strings — `Expand-Archive` has no literal form for its destination, so
+  a bracket there could not be fixed any other way.
+
 - **The first build on Windows failed in Git Bash and MSYS2.** Unpacking the
   Zig toolchain went through whatever `tar` was on `PATH`, on the assumption
   that this is the bsdtar Windows 10 1803 and later ship. In a Git Bash or
