@@ -17,17 +17,6 @@ export type OptimizeMode =
   | 'fast'
   | 'small'
 
-/** How the Node headers are obtained. */
-export type NodeHeadersMode =
-  /** Download from nodejs.org; fall back to `node-api-headers` when offline. */
-  | 'auto'
-  /** Always download from nodejs.org. */
-  | 'download'
-  /** Use the installed `node-api-headers` package. */
-  | 'package'
-  /** A directory containing `node_api.h`. */
-  | (string & {})
-
 /** One cross-compilation target. */
 export interface TargetConfig {
   /** A Zig target triple, e.g. `x86_64-linux-gnu` or `aarch64-macos`. */
@@ -57,10 +46,12 @@ export interface Config {
   napi?: boolean | 'auto'
   /** Node-API version to target. Defaults to 8. */
   napiVersion?: number
-  /** Node version whose headers to use. Defaults to the nearest `.nvmrc`. */
-  nodeVersion?: string
-  /** Where the Node headers come from. Defaults to `'auto'`. */
-  nodeHeaders?: NodeHeadersMode
+  /**
+   * A directory containing `node_api.h`, used instead of the `node-api-headers`
+   * package. The escape hatch for the full Node header set — `v8.h`, `node.h`,
+   * `uv.h` — which is otherwise not available.
+   */
+  nodeHeaders?: string
   /**
    * Build the extra Bun addon on Windows, where Bun exports the Node-API from
    * `bun.exe`. `'auto'` builds it whenever Bun is installed.
@@ -121,13 +112,28 @@ export interface Config {
 /** The fully resolved configuration, with every default filled in. */
 export interface ResolvedConfig
   extends Required<
-    Omit<Config, 'targets' | 'cpu' | 'steps' | 'zigArgs' | 'skipConfigFile' | 'name'>
+    Omit<
+      Config,
+      | 'targets'
+      | 'cpu'
+      | 'steps'
+      | 'zigArgs'
+      | 'skipConfigFile'
+      | 'name'
+      | 'nodeHeaders'
+      | 'zigExe'
+      | 'globalCacheDir'
+    >
   > {
   name: string
   packageName?: string
   targets: Record<string, TargetConfig>
   steps: string[]
   zigArgs: string[]
+  /** These three stay optional: unset means "work it out", not a default. */
+  nodeHeaders?: string
+  zigExe?: string
+  globalCacheDir?: string
 }
 
 /**

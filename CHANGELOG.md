@@ -9,6 +9,93 @@ The Zig template in `zig/` counts as part of the public interface: a change to
 it that an existing project would have to react to is a breaking change, not a
 patch.
 
+## [0.3.0] - 2026-09-07
+
+Nothing is downloaded from nodejs.org any more. Addons compile against the
+`node-api-headers` package that ships with this one, and on Windows the import
+library is generated from that package's module definition file instead of a
+downloaded `node.lib`. ziglang.org is now the only host this tool contacts.
+That fixes a Windows build that could not start at all, and it removes direct
+V8 access — which a Node-API addon should not have been reaching for anyway.
+
+**Upgrading.** Nothing to change for an addon that includes `node_api.h` or
+uses `node-addon-api`. Three things can bite: an addon that includes `v8.h`,
+`node.h` or `uv.h` stops compiling; `--node-version` is now an unknown option;
+and a `build.zig` driven by hand with `-Dnode-lib=` stops recognising it.
+
+### Fixed
+
+- **A Windows build no longer needs `tar` on `PATH`.** The Node header tarball
+  was the only `.tar.gz` this tool unpacked, and the extractor's Windows
+  fallback — PowerShell's `Expand-Archive` — only handles `.zip`. Without `tar`
+  the build stopped at `cannot extract …: no usable 'tar' was found on PATH`
+  before anything was compiled. Zig ships its Windows toolchain as a `.zip`, so
+  nothing Windows downloads needs `tar` any more.
+
+### Changed
+
+- **`node-api-headers` is the only source of Node-API headers.** It is a
+  dependency of this package, so it is always present, it is versioned by npm
+  rather than by whichever Node happens to be running, and nothing is
+  downloaded or unpacked to get at it. A first build is one download shorter,
+  and no build depends on nodejs.org being reachable.
+- **Windows always builds its import library locally**, with `zig dlltool` from
+  `node_api.def`. That was already the preferred route; now it is the only one.
+  It is also the only route that can serve **Bun**, whose Node-API exports live
+  in `bun.exe` rather than `node.exe` — so a Windows target cross compiles from
+  a warm cache with no network at all.
+- **`--node-headers` takes a directory, and only a directory.** The `auto`,
+  `download` and `package` modes are gone with the download they selected, and
+  the path form is now checked: a missing directory, or one without
+  `node_api.h` in it, is an error rather than a silent fall back to the bundled
+  headers.
+- `c-cpp-zig-build info` reports the header directory it would use and where it
+  came from, as `node-api-headers <version>` or `configured`.
+
+### Removed
+
+- **The Node header tarball download, and with it `v8.h`, `node.h` and `uv.h`.**
+  `node-api-headers` carries the Node-API and nothing else. An addon reaching
+  past it into V8 is pinned to one Node build in the way Node-API exists to
+  avoid — but if you need those headers, supply them yourself:
+
+  ```bash
+  c-cpp-zig-build --node-headers /path/to/node/include/node
+  ```
+
+  The directory is used verbatim, so a full Node header set works exactly as
+  before.
+- **The `node.lib` download, and the template's `-Dnode-lib` option.** This is a
+  breaking change to the Zig template, which is why this is not a patch
+  release: a `build.zig` invoked by hand with `-Dnode-lib=<path>` now fails with
+  `error: invalid option: -Dnode-lib`. Through the CLI nothing changes. To link
+  a real `node.lib`, add it to the compile step yourself — what `addNodeAddon`
+  returns is a plain `std.Build.Step.Compile`.
+- **`--node-version`, `nodeVersion` and the `.nvmrc` lookup behind them.** The
+  setting chose the header download, then the `node.lib` download, and both are
+  gone. The flag is now `unknown option '--node-version'`; `nodeVersion` in a
+  config file or in package.json's `zigNative` block is ignored; `info` no
+  longer prints a `node version` row; and `resolveConfig` no longer returns one.
+  `--napi-version` was doing the real work all along: it sets `NAPI_VERSION`,
+  which decides what the headers expose and therefore which runtimes the addon
+  loads in.
+- `NODEJS_ORG_MIRROR`, which had nothing left to point at.
+- The `NodeHeadersMode` type in `index.d.ts`. `Config.nodeHeaders` is now
+  `string | undefined`.
+
+### Added
+
+- **`examples/06-turborepo`**, a two-package turborepo whose build outputs are
+  produced by this tool. It answers, as an executable check, whether a compiled
+  `.node` file survives turbo's cache: it does, provided `turbo.json` names the
+  directory under `outputs`. A second task in the same repository declares no
+  outputs, so the failure — a cache hit that replays "built …" and restores
+  nothing — stays demonstrated rather than described.
+- Every example is now runnable with `npm run build` / `npm test` from its own
+  directory, with nothing installed first. Their scripts call the checkout
+  through a relative path, so an example always exercises the working tree
+  rather than a published release.
+
 ## [0.2.1] - 2026-08-25
 
 A dependency whose `build.zig` reads the working directory no longer brings the
@@ -129,5 +216,7 @@ Initial version. Never published.
 - `init`, `build`, `clean`, `info` and `zig` commands, a JavaScript API, and
   four worked examples.
 
+[0.3.0]: https://github.com/gradido/c_cpp_zig_build/releases/tag/v0.3.0
+[0.2.1]: https://github.com/gradido/c_cpp_zig_build/releases/tag/v0.2.1
 [0.2.0]: https://github.com/gradido/c_cpp_zig_build/releases/tag/v0.2.0
 [0.1.0]: https://github.com/gradido/c_cpp_zig_build/releases/tag/v0.1.0

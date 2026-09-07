@@ -16,8 +16,8 @@ in `include/`, vendored libraries in `third_party/`. Every `.c` and `.cpp` file
 under `src/` and `napi/` is compiled automatically — there is no file list to
 maintain. `build.zig` says what to build and is usually four lines. Build with
 `npm run build` (or `bun run build` / `yarn build` / `pnpm build`); never invoke
-a compiler directly. The Zig toolchain and the Node headers are downloaded on
-first build; nothing needs to be installed.
+a compiler directly. The Zig toolchain is downloaded on first build and the
+Node-API headers ship with the tool; nothing needs to be installed.
 
 ---
 
@@ -38,7 +38,7 @@ Substitute your package manager's runner for `npx` (`bunx`, `yarn dlx`,
 `pnpm exec`) — the tool is the same.
 
 **When a build fails, run `npx c-cpp-zig-build info` first.** It prints which
-Zig, which Node headers, which target and which output directory are in play,
+Zig, which headers, which target and which output directory are in play,
 and most confusing failures are explained by one of those being unexpected.
 
 ---
@@ -64,9 +64,14 @@ subdirectories: the walk is recursive.
 
 Bindings may be C (`#include <node_api.h>`) or C++ (`#include <napi.h>`).
 Both headers are available without the project installing anything:
-`c-cpp-zig-build` downloads the Node headers and depends on `node-addon-api`.
-Declare `node-addon-api` in the project's package.json when the version
-matters — the declared one wins.
+`c-cpp-zig-build` depends on `node-api-headers` and `node-addon-api`. Declare
+either in the project's package.json when the version matters — the declared
+one wins.
+
+`node-api-headers` carries the Node-API and nothing else, so `v8.h`, `node.h`
+and `uv.h` are not available. A binding that needs them is doing something
+Node-API is meant to make unnecessary; if it genuinely does, pass
+`--node-headers <dir>` with a full Node header set.
 
 Put it in `napi/`, and keep it thin. A binding should convert JavaScript values
 to C types, call a function in `src/`, and convert the result back. Logic in
@@ -298,7 +303,7 @@ lib/                JavaScript side (ESM, no build step)
   config.js         defaults, config files, auto-detection
   zig.js            toolchain download, mirrors, checksum + signature checks
   minisign.js       Ed25519 signature verification for the Zig archive
-  node-headers.js   Node headers, node.lib, node-addon-api discovery
+  node-headers.js   node-api-headers / node-addon-api discovery
   scaffold.js       the `init` command
   template.js       copying the Zig template into a project
   download.js       fetch, verify, extract, lock

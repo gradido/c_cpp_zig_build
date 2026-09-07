@@ -2,8 +2,9 @@
 
 Build native C/C++ Node.js modules with Zig, without a system toolchain.
 
-`npm run build` downloads the Zig compiler and the Node headers, compiles your
-C and C++ sources, and writes a `.node` addon. There is no `node-gyp`, no
+`npm run build` downloads the Zig compiler, compiles your C and C++ sources
+against the Node-API headers that ship with this package, and writes a `.node`
+addon. There is no `node-gyp`, no
 Python, no Visual Studio, no `build-essential` — and cross compiling to another
 platform is one flag.
 
@@ -52,14 +53,14 @@ the machine.
 
 This package makes that practical:
 
-- **Nothing to install.** The Zig toolchain and the Node headers are downloaded
-  on first build and cached in `~/.zig-build`, shared across all your projects.
-  `node-addon-api` and `node-api-headers` come along as dependencies, so C++
-  bindings and Windows builds work without a project adding anything.
+- **Nothing to install.** The Zig toolchain is downloaded on first build and
+  cached in `~/.zig-build`, shared across all your projects. The Node-API
+  headers are not downloaded at all: `node-addon-api` and `node-api-headers`
+  come along as dependencies, so C++ bindings and Windows builds work without
+  a project adding anything.
 - **Verified downloads.** The Zig archive is checked twice before it is
   unpacked: against the SHA-256 published by ziglang.org, and against the Zig
-  project's minisign signature using a key pinned in this package. Node headers
-  are checked against nodejs.org's `SHASUMS256.txt`.
+  project's minisign signature using a key pinned in this package.
 - **A build file you can read.** `build.zig` is usually four lines. The template
   behind it is a normal Zig package, and the artifact it returns is a normal
   `std.Build.Step.Compile`, so nothing is out of reach.
@@ -82,9 +83,9 @@ in C++ with `node-addon-api`. The [examples](#examples) show both.
 | | |
 |---|---|
 | Node.js | 18.17 or newer (Bun and Yarn work too — they run the same CLI) |
-| Disk | ~150 MB in `~/.zig-build` for the toolchain and headers |
+| Disk | ~150 MB in `~/.zig-build` for the toolchain |
 | Network | On the first build only, then never again |
-| `tar` | Present on macOS, Linux, and Windows 10 1803+ |
+| `tar` | macOS and Linux only, where it is always present. Windows unpacks the toolchain with PowerShell |
 
 No compiler, no Python, no Visual Studio Build Tools.
 
@@ -164,8 +165,8 @@ npm run build
   └─ c-cpp-zig-build
        ├─ copies the Zig template into .zig-native/          (every build, fast)
        ├─ downloads Zig            → ~/.zig-build/zig/0.15.2/
-       ├─ downloads Node headers   → ~/.zig-build/node/v22.11.0/
-       ├─ finds node-addon-api (yours if you declare one, otherwise its own)
+       ├─ finds node-api-headers and node-addon-api
+       │    (yours if you declare them, otherwise the copies shipped here)
        └─ runs: zig build -Dtarget=… -Doptimize=… -Dnode-headers=… -p build
             └─ your build.zig
                  └─ the template: walks src/ and napi/, compiles, links,
@@ -177,7 +178,6 @@ npm run build
 | Path | What | Commit it? |
 |---|---|---|
 | `~/.zig-build/zig/<version>/` | the Zig toolchain | shared, outside the project |
-| `~/.zig-build/node/v<version>/` | Node headers and `node.lib` | shared, outside the project |
 | `~/.zig-build/zig-global-cache/` | fetched Zig packages | shared, outside the project |
 | `.zig-native/` | the build template, copied in | no |
 | `.zig-cache/` | Zig's build cache | no |
@@ -256,10 +256,13 @@ c-cpp-zig-build --no-verify-signature
 
 ### Node headers
 
-Downloads from nodejs.org are checked against the SHA-256 in that release's
-`SHASUMS256.txt`, fetched over TLS from nodejs.org itself. Node signs that file
-with the release manager's GPG key; verifying *that* would require shipping a
-keyring, which this package does not do.
+Nothing to verify: they are not downloaded, and neither is anything else from
+nodejs.org. Every addon compiles against the `node-api-headers` package, and on
+Windows the import library is generated from that same package's module
+definition file. Both arrive through npm with the rest of the dependency tree
+and are covered by `npm audit signatures` below.
+
+ziglang.org is the only host this tool contacts.
 
 ### This package's own dependencies
 
@@ -270,7 +273,7 @@ what compiles, so the version that ships is the version that was tested:
 | | Pinned | Why it is here |
 |---|---|---|
 | `node-addon-api` | 8.9.2 | the C++ layer, so `#include <napi.h>` works with no setup |
-| `node-api-headers` | 1.9.0 | the Windows `.def` files, and an offline header fallback |
+| `node-api-headers` | 1.9.0 | the Node-API headers every addon compiles against, and the Windows `.def` files |
 
 Both are published with npm provenance attestations, so the whole tree can be
 checked:
@@ -578,7 +581,7 @@ export default defineConfig({
 ```jsonc
 // package.json
 {
-  "zigNative": { "optimize": "fast", "nodeVersion": "22.11.0" }
+  "zigNative": { "optimize": "fast", "napiVersion": 9 }
 }
 ```
 
@@ -603,8 +606,8 @@ c-cpp-zig-build zig -- <args>        run the managed Zig toolchain
 | `--zig-version <ver>` | which Zig release to download |
 | `--zig-exe <path>` | use this Zig instead of downloading one |
 | `--system-zig` | use `zig` from `PATH` when its version matches |
-| `--node-version <ver>` | Node headers to compile against |
-| `--node-headers <mode>` | `auto`, `download`, `package`, or a path |
+| `--napi-version <n>` | Node-API level to target (default `8`) |
+| `--node-headers <dir>` | headers to compile against, instead of `node-api-headers` |
 | `--offline` | fail rather than download anything |
 | `--no-verify-signature` | skip the Zig archive signature check (inadvisable) |
 | `--no-napi` | build a plain library, not an addon |
@@ -619,17 +622,42 @@ Anything after `--` is passed to `zig build`, which is how
 | `C_CPP_ZIG_BUILD_HOME` | where downloads are cached (default `~/.zig-build`) |
 | `ZIG_EXE` | use this Zig binary |
 | `ZIG_MIRROR` | try this Zig mirror first |
-| `NODEJS_ORG_MIRROR` | where to fetch Node headers from |
 | `NO_COLOR` | plain output |
 | `C_CPP_ZIG_BUILD_DEBUG` | print stack traces on failure |
 
-### The Node version
+### Which Node an addon runs on
 
-Headers are chosen from, in order: `--node-version`, `nodeVersion` in the
-config, the nearest `.nvmrc` walking up from the project, then the Node that is
-running the build. Node-API is ABI stable, so an addon built against one
-version loads in every later one — the version mostly decides which `v8.h` and
-`uv.h` you can reach for.
+There is nothing to point at a Node version, and no `--node-version` flag.
+Node-API is ABI stable and its headers come from `node-api-headers`, so an
+addon is built once and loads in every runtime that implements the Node-API
+level it asked for — Bun included.
+
+`--napi-version` is what asks. It becomes the `NAPI_VERSION` macro, which gates
+what the headers expose. The default is 8, which every Node this package
+supports implements. Raising it reaches newer functions at the cost of the
+older runtimes — level 9 wants Node 18.17 or 20.3 and up:
+
+```bash
+c-cpp-zig-build --napi-version 9
+```
+
+### Reaching past Node-API
+
+`node-api-headers` carries the Node-API and nothing else: `node_api.h`,
+`js_native_api.h` and their `_types` headers. `v8.h`, `node.h` and `uv.h` are
+not there, and are not downloaded — an addon that includes them is pinned to
+one Node build in exactly the way Node-API exists to avoid.
+
+If you need them regardless, supply them yourself:
+
+```bash
+c-cpp-zig-build --node-headers /path/to/node-v22.11.0/include/node
+```
+
+The directory is passed to the compiler verbatim; it must contain
+`node_api.h`. Nothing else about the build changes — on Windows the import
+library still comes from `node-api-headers`, which stays installed either
+way.
 
 ---
 
@@ -653,8 +681,9 @@ build/
 └── x86_64-windows/my_native.node
 ```
 
-Targets build in parallel. Cross compiling to Windows downloads that
-architecture's `node.lib` automatically.
+Targets build in parallel. Cross compiling to Windows needs nothing extra:
+the import library is generated for that architecture from `node-api-headers`'
+module definition file.
 
 **glibc version.** To build for an older Linux than the one you are on, name
 the glibc you want:
@@ -680,15 +709,23 @@ module.exports = require(`./build/${arch}-${platform}/my_native.node`)
 ## Windows and Bun
 
 A DLL may not have undefined symbols, so a Windows addon must link an import
-library for the Node-API. There are two routes and the right one is chosen for
-you:
+library for the Node-API. It is built locally, from the `node_api.def` that
+`node-api-headers` ships:
 
-- **A `.def` file**, turned into an import library by `zig dlltool`. This is
-  the default: `node-api-headers` is a dependency of this package, the file is
-  a few kilobytes, nothing is downloaded, and it is the only route that works
-  for **Bun**, whose Node-API exports live in `bun.exe` rather than `node.exe`.
-- **`node.lib`**, downloaded from nodejs.org — what node-gyp does. The fallback
-  for when `node-api-headers` cannot be resolved at all. Node only.
+```
+zig dlltool -m i386:x86-64 -D node.exe -d node_api.def -l node_api.lib
+```
+
+The file is a few kilobytes and needs no download. It is also the only route
+that works for **Bun**, whose Node-API exports live in `bun.exe` rather than
+`node.exe` — the same `.def` produces a second import library against
+`bun.exe`, which is how one build serves both runtimes.
+
+node-gyp instead downloads `node.lib` from nodejs.org. This package used to
+fall back to that and no longer does: it is a download for something that can
+be produced offline, and it cannot serve Bun. If you have a reason to link a
+real `node.lib`, add it to the compile step yourself — the artifact
+`addNodeAddon` returns is a plain `std.Build.Step.Compile`.
 
 So Bun on Windows needs nothing extra. The build produces both
 `my_native.node` and `my_native.bun.node` whenever Bun is installed, and the
@@ -747,6 +784,10 @@ The CLI is the same everywhere; only the wrapper differs.
 | pnpm | `pnpm build` |
 | Bun | `bun run build` |
 
+With Bun, keep the `run`: `build`, `test` and `info` are Bun sub-commands of
+their own, so a bare `bun test` runs Bun's test runner and `bun info` queries
+the npm registry — neither reaches the script of that name.
+
 In a monorepo, put the package in the workspace that holds the native module.
 Turborepo and Nx work unchanged; a task that depends on the addon should depend
 on `build`:
@@ -755,6 +796,14 @@ on `build`:
 // turbo.json
 { "tasks": { "build": { "outputs": ["build/**"] }, "test": { "dependsOn": ["build"] } } }
 ```
+
+**`outputs` is the line that matters.** A compiled `.node` file is the one
+build output nothing else will ever recreate, and turbo restores only what a
+task declares. Leave it out and turbo still reports a cache hit and still
+replays the log line saying the addon was built — with no file on disk, and a
+`Cannot find module` in whatever runs next.
+[`examples/06-turborepo`](examples/06-turborepo) is a working workspace that
+asserts both halves of that, including the failure.
 
 `node-addon-api` and `node-api-headers` are resolved from the project that is
 being built before this package's own copies, so hoisting them to the
@@ -786,9 +835,12 @@ runner.
 For a hermetic build, pin the toolchain and forbid downloads after a warm-up:
 
 ```bash
-c-cpp-zig-build --zig-version 0.15.2 --node-version 22.11.0
+c-cpp-zig-build --zig-version 0.15.2
 c-cpp-zig-build --offline        # fails rather than reaching the network
 ```
+
+The toolchain is the only thing pinning applies to; everything else a build
+needs is in `node_modules`, at the version your lockfile already pins.
 
 ---
 
@@ -974,14 +1026,23 @@ Either create it, remove it from `.sources`, or mark the set
 `build.zig` was run directly instead of through the CLI. Either use
 `c-cpp-zig-build`, or pass `-Dnode-headers=<dir>` yourself.
 
+**`'v8.h' file not found`**, or the same for `node.h` or `uv.h`
+Since 0.3.0 the headers come from `node-api-headers`, which carries the
+Node-API and nothing else. Either drop the include — a Node-API addon rarely
+needs V8 — or supply the full set yourself with
+`--node-headers /path/to/node/include/node`. See
+[Reaching past Node-API](#reaching-past-node-api).
+
 **`undefined symbol: _napi_…` when cross compiling to macOS**
 This should not happen — the template sets the flag that allows it. If you
 replaced `addNodeAddon` with a hand-written compile step, set
 `compile.linker_allow_shlib_undefined = true` for macOS targets.
 
 **`building a Windows addon needs an import library`**
-Only when you run `zig build` by hand. Through the CLI, `node.lib` is
-downloaded automatically.
+`node-api-headers` could not be resolved, so there is no `node_api.def` to turn
+into one. It ships as a dependency of this package, so this is normally a
+broken install: reinstall, or add `node-api-headers` to the project.
+
 
 **A dependency panics with `FileNotFound` on a directory of yours**
 A package whose `build.zig` reaches for `std.fs.cwd()` rather than
@@ -1003,8 +1064,10 @@ build continues; nothing is wrong. Set `ZIG_MIRROR` to a fast mirror, or to
 `https://ziglang.org/download` to skip the mirrors entirely.
 
 **Behind a proxy or an air-gapped network**
-Set `ZIG_MIRROR` and `NODEJS_ORG_MIRROR` to internal mirrors, or pre-populate
-`~/.zig-build` and build with `--offline`.
+Set `ZIG_MIRROR` to an internal mirror, or pre-populate `~/.zig-build` and
+build with `--offline`. The Zig toolchain is the only thing fetched, so a
+warmed cache is enough to build entirely offline — Windows targets
+included.
 
 **`c-cpp-zig-build info`** prints every resolved path and version. It is the
 first thing to run when a build behaves unexpectedly.

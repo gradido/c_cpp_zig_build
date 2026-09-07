@@ -5,9 +5,13 @@ import path from 'node:path'
 import test from 'node:test'
 
 import { resolveConfig } from '../lib/config.js'
-import { findUp, toIdentifier } from '../lib/fsutil.js'
-import { detectHostTriple, detectNodeVersion, nodeWindowsArch } from '../lib/host.js'
-import { resolveNodeAddonApi, resolveNodeApiHeaders } from '../lib/node-headers.js'
+import { toIdentifier } from '../lib/fsutil.js'
+import { detectHostTriple } from '../lib/host.js'
+import {
+  resolveNodeAddonApi,
+  resolveNodeApiHeaders,
+  resolveNodeHeaders,
+} from '../lib/node-headers.js'
 import { fingerprint } from '../lib/scaffold.js'
 import { packagedTemplateDir } from '../lib/template.js'
 
@@ -42,20 +46,6 @@ test('fingerprint ids vary, so forks do not collide', () => {
 
 test('the host triple is one Zig understands', async () => {
   assert.match(await detectHostTriple(), /^[a-z0-9_]+-[a-z]+(-[a-z0-9]+)?$/)
-})
-
-test('nodeWindowsArch maps triples to nodejs.org directories', () => {
-  assert.equal(nodeWindowsArch('x86_64-windows'), 'win-x64')
-  assert.equal(nodeWindowsArch('aarch64-windows'), 'win-arm64')
-  assert.throws(() => nodeWindowsArch('x86_64-linux-gnu'))
-})
-
-test('a .nvmrc pins the Node version, an alias does not', () => {
-  const pinned = tempProject({ '.nvmrc': 'v20.11.1\n' })
-  assert.equal(detectNodeVersion(pinned), '20.11.1')
-
-  const alias = tempProject({ '.nvmrc': 'lts/*\n' })
-  assert.equal(detectNodeVersion(alias), process.versions.node)
 })
 
 test('an addon is detected from a napi/ directory', async () => {
@@ -160,6 +150,39 @@ test('the bundled header packages are always resolvable', () => {
   assert.ok(fs.existsSync(apiHeaders.nodeApiDef))
 })
 
+test('the Node headers come from node-api-headers, with nothing downloaded', () => {
+  const bare = tempProject({ 'package.json': JSON.stringify({ name: 'bare' }) })
+
+  const headers = resolveNodeHeaders({ root: bare })
+  assert.match(headers.source, /^node-api-headers /)
+  assert.ok(fs.existsSync(path.join(headers.includeDir, 'node_api.h')))
+  // The full Node header set is deliberately not here: an addon reaching for
+  // V8 directly is pinned to one Node build, which Node-API exists to avoid.
+  assert.ok(!fs.existsSync(path.join(headers.includeDir, 'v8.h')))
+})
+
+test('an explicit nodeHeaders directory wins, and is checked', () => {
+  const project = tempProject({
+    'package.json': JSON.stringify({ name: 'own-headers' }),
+    'vendor/include/node_api.h': '/* pretend */\n',
+    'vendor/empty/.keep': '',
+  })
+
+  const headers = resolveNodeHeaders({ root: project, nodeHeaders: 'vendor/include' })
+  assert.equal(headers.source, 'configured')
+  assert.equal(headers.includeDir, path.join(project, 'vendor', 'include'))
+
+  // A silent fallback to the bundled headers would compile the wrong thing.
+  assert.throws(
+    () => resolveNodeHeaders({ root: project, nodeHeaders: 'vendor/nowhere' }),
+    /missing directory/,
+  )
+  assert.throws(
+    () => resolveNodeHeaders({ root: project, nodeHeaders: 'vendor/empty' }),
+    /no node_api\.h/,
+  )
+})
+
 test('a package the project declares is reported as its own', () => {
   // Declaration is read from package.json, not inferred from where the file
   // turned up: npm hoists this package's dependencies into the consumer's
@@ -172,6 +195,18 @@ test('a package the project declares is reported as its own', () => {
   })
   assert.equal(resolveNodeAddonApi(declaring).declared, true)
   assert.equal(resolveNodeApiHeaders(declaring).declared, false)
+})
+
+test('nothing in lib/ reaches for nodejs.org', () => {
+  // Since 0.3.0 the Node-API headers come from `node-api-headers` and the
+  // Windows import library is generated locally from its .def file. Nothing is
+  // fetched from nodejs.org any more, and this is what keeps that true.
+  const dir = new URL('../lib/', import.meta.url)
+  for (const file of fs.readdirSync(dir)) {
+    const source = fs.readFileSync(new URL(file, dir), 'utf8')
+    assert.ok(!source.includes('nodejs.org'), `lib/${file} still references nodejs.org`)
+    assert.ok(!source.includes('node.lib'), `lib/${file} still references node.lib`)
+  }
 })
 
 test('the published manifest is intact', () => {
@@ -248,8 +283,4 @@ test('node-addon-api still supports the Node versions this package claims', () =
     new RegExp(`\\b${ourMajor}\\b`),
     `node-addon-api ${addonApi.version} does not list Node ${ourMajor}: ${addonApi.engines.node}`,
   )
-})
-
-test('findUp stops at the filesystem root instead of looping', () => {
-  assert.equal(findUp(os.tmpdir(), 'this-file-does-not-exist-anywhere'), undefined)
 })

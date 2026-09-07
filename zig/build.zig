@@ -402,7 +402,6 @@ const Context = struct {
 
     node_headers: ?[]const u8,
     napi_headers: ?[]const u8,
-    node_lib: ?[]const u8,
     node_api_def: ?[]const u8,
     napi_version: []const u8,
     bun: bool,
@@ -441,7 +440,6 @@ fn context(b: *std.Build) *Context {
         .optimize = optimize,
         .node_headers = b.option([]const u8, "node-headers", "Directory containing node_api.h"),
         .napi_headers = b.option([]const u8, "napi-headers", "Directory containing napi.h (node-addon-api)"),
-        .node_lib = b.option([]const u8, "node-lib", "Windows import library for the host executable"),
         .node_api_def = b.option([]const u8, "node-api-def", "Windows module definition file for the Node-API exports"),
         .napi_version = b.option([]const u8, "napi-version", "Node-API version to target") orelse "8",
         .bun = b.option(bool, "bun", "Also build a Bun addon on Windows") orelse false,
@@ -712,16 +710,9 @@ fn linkWindowsHost(
         compile.addObjectFile(napi.importLibraryFromDef(b, target, def, host_executable));
         return;
     }
-    if (std.mem.eql(u8, host_executable, "node.exe")) {
-        if (ctx.node_lib) |lib| {
-            compile.addObjectFile(.{ .cwd_relative = lib });
-            return;
-        }
-    }
     std.debug.panic(
         "c-cpp-zig-build: building a Windows addon for {s} needs an import library. " ++
-            "Pass -Dnode-api-def=<node_api.def> (works for Node and Bun) or " ++
-            "-Dnode-lib=<node.lib> (Node only).",
+            "Pass -Dnode-api-def=<node_api.def>; `node-api-headers` ships one.",
         .{host_executable},
     );
 }
