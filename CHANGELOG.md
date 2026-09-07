@@ -11,12 +11,14 @@ patch.
 
 ## [0.3.0] - 2026-09-07
 
-Nothing is downloaded from nodejs.org any more. Addons compile against the
-`node-api-headers` package that ships with this one, and on Windows the import
-library is generated from that package's module definition file instead of a
-downloaded `node.lib`. ziglang.org is now the only host this tool contacts.
-That fixes a Windows build that could not start at all, and it removes direct
-V8 access — which a Node-API addon should not have been reaching for anyway.
+Nothing is downloaded from nodejs.org any more — not the headers, not
+`node.lib`. Addons compile against the `node-api-headers` package that ships
+with this one, and on Windows the import library is generated from that
+package's module definition file. The Zig toolchain is the only download left,
+served by a community mirror or by ziglang.org, which in either case also
+supplies the index and signature the archive is checked against. That fixes a
+Windows build that could not start at all, and it removes direct V8 access —
+which a Node-API addon should not have been reaching for anyway.
 
 **Upgrading.** Nothing to change for an addon that includes `node_api.h` or
 uses `node-addon-api`. Three things can bite: an addon that includes `v8.h`,

@@ -262,7 +262,22 @@ Windows the import library is generated from that same package's module
 definition file. Both arrive through npm with the rest of the dependency tree
 and are covered by `npm audit signatures` below.
 
-ziglang.org is the only host this tool contacts.
+### What is contacted, and by whom
+
+nodejs.org is not contacted at all — not for headers, not for `node.lib`.
+
+The Zig toolchain is the one download left, and it is not always ziglang.org
+that serves it. Three community mirrors are tried at random first, with
+ziglang.org as the fallback; Zig asks tooling to prefer the mirrors, which is
+why. ziglang.org always serves the three things that make a mirror safe to use:
+the release index with its SHA-256, the mirror list itself, and the minisign
+signature — a mirror never gets to vouch for its own archive. `ZIG_MIRROR` pins
+one source, and `--offline` allows none.
+
+| Host | What it serves |
+|---|---|
+| ziglang.org | the release index, the mirror list, and the signature |
+| a community mirror | the archive itself, checked against both of the above |
 
 ### This package's own dependencies
 

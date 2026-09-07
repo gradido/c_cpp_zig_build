@@ -6,7 +6,7 @@ import path from 'node:path'
 import test from 'node:test'
 
 import { resolveConfig } from '../lib/config.js'
-import { chooseExtractor, extractArchive, withLock } from '../lib/download.js'
+import { chooseExtractor, expandArchive, extractArchive, withLock } from '../lib/download.js'
 import { toIdentifier } from '../lib/fsutil.js'
 import { detectHostTriple } from '../lib/host.js'
 import { progressTarget } from '../lib/log.js'
@@ -172,8 +172,59 @@ test('GNU tar gets --force-local on Windows, bsdtar never does', () => {
   )
 })
 
+test('PowerShell unpacks a zip from a path it would otherwise treat as a pattern', {
+  skip:
+    process.platform === 'win32'
+      ? false
+      : 'Expand-Archive, and its quoting rules, exist only on Windows',
+}, async () => {
+  // The branch under test is unreachable through extractArchive on a modern
+  // Windows — chooseExtractor prefers the bsdtar in System32 — so it is
+  // called directly. The directory name carries both hazards at once: `[1]`
+  // is a wildcard to PowerShell's -Path, and the apostrophe closes a
+  // single-quoted literal. Interpolating either into the command string
+  // fails; passing them as data does not.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'czb-ps-'))
+  const awkward = path.join(dir, "o'brien [1]")
+  fs.mkdirSync(path.join(awkward, 'src', 'pkg-1.0.0', 'lib'), { recursive: true })
+  fs.writeFileSync(path.join(awkward, 'src', 'pkg-1.0.0', 'run.txt'), 'binary\n')
+  fs.writeFileSync(path.join(awkward, 'src', 'pkg-1.0.0', 'lib', 'a.txt'), 'a\n')
+
+  const zip = path.join(awkward, 'pkg.zip')
+  const made = spawnSync(
+    'powershell',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      "$ProgressPreference = 'SilentlyContinue';" +
+        ' Compress-Archive -LiteralPath $env:CZB_SRC -DestinationPath $env:CZB_ZIP -Force',
+    ],
+    {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CZB_SRC: path.join(awkward, 'src', 'pkg-1.0.0'),
+        CZB_ZIP: zip,
+      },
+    },
+  )
+  assert.equal(made.status, 0, `could not build the fixture:\n${made.stdout}${made.stderr}`)
+
+  const out = path.join(awkward, 'out')
+  await expandArchive(zip, out, 1)
+
+  assert.ok(fs.existsSync(path.join(out, 'run.txt')), 'the top level should be stripped')
+  assert.equal(fs.readFileSync(path.join(out, 'lib', 'a.txt'), 'utf8'), 'a\n')
+  assert.ok(!fs.existsSync(`${out}.staging`), 'the staging directory should be gone')
+})
+
 test('extractArchive unpacks a tarball and strips its top level', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'czb-tar-'))
+  // From a directory whose name carries both hazards the Windows path had:
+  // `[1]` is a wildcard to a shell or to PowerShell's -Path, and the
+  // apostrophe closes a quoted literal. Nothing here builds a command string
+  // out of a path — `run` spawns without a shell — and this is what says so.
+  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'czb-tar-')), "o'brien [1]")
   fs.mkdirSync(path.join(dir, 'src', 'pkg-1.0.0', 'lib'), { recursive: true })
   fs.writeFileSync(path.join(dir, 'src', 'pkg-1.0.0', 'run'), 'binary\n')
   fs.writeFileSync(path.join(dir, 'src', 'pkg-1.0.0', 'lib', 'a.txt'), 'a\n')
