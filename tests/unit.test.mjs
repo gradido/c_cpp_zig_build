@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 
 import { resolveConfig } from '../lib/config.js'
+import { chooseExtractor, extractArchive } from '../lib/download.js'
 import { toIdentifier } from '../lib/fsutil.js'
 import { detectHostTriple } from '../lib/host.js'
 import {
@@ -117,6 +119,69 @@ test('targets accept a string, an array and a map', async () => {
     targets: { legacy: { triple: 'x86_64-linux-gnu', glibc: '2.28' } },
   })
   assert.equal(named.targets.legacy.glibc, '2.28')
+})
+
+test('a zip is never handed to GNU tar', () => {
+  // Two separate Windows facts, both of which bit: GNU tar cannot read a zip
+  // at all, and it reads `C:\...` as `host:path` and tries to open a network
+  // connection — `tar: Cannot connect to C: resolve failed`. A Git Bash or
+  // MSYS2 shell puts its own GNU tar ahead of the bsdtar Windows ships, so
+  // this is the `tar` a build finds there.
+  const gnuOnWindows = {
+    flavour: 'gnu',
+    systemTar: 'C:\\Windows\\System32\\tar.exe',
+    windows: true,
+  }
+
+  // Reach past the GNU tar on PATH to the bsdtar in System32.
+  assert.deepEqual(chooseExtractor({ archive: 'zig.zip', ...gnuOnWindows }), {
+    kind: 'tar',
+    exe: 'C:\\Windows\\System32\\tar.exe',
+    forceLocal: false,
+  })
+
+  // Before 1803 there is no bsdtar to reach for, so PowerShell it is.
+  assert.deepEqual(
+    chooseExtractor({ archive: 'zig.zip', flavour: 'gnu', systemTar: undefined, windows: true }),
+    { kind: 'expand-archive' },
+  )
+
+  // Off Windows there is no fallback, so say so rather than let GNU tar fail
+  // with "this does not look like a tar archive".
+  assert.deepEqual(
+    chooseExtractor({ archive: 'x.zip', flavour: 'gnu', systemTar: undefined, windows: false }),
+    { kind: 'none' },
+  )
+})
+
+test('GNU tar gets --force-local on Windows, bsdtar never does', () => {
+  // `--force-local` is what stops `C:\...` being read as a remote host.
+  // bsdtar does not need it and does not accept it.
+  assert.equal(
+    chooseExtractor({ archive: 'x.tar.gz', flavour: 'gnu', windows: true }).forceLocal,
+    true,
+  )
+  assert.equal(
+    chooseExtractor({ archive: 'x.tar.gz', flavour: 'bsdtar', windows: true }).forceLocal,
+    false,
+  )
+  assert.equal(
+    chooseExtractor({ archive: 'x.tar.xz', flavour: 'gnu', windows: false }).forceLocal,
+    false,
+  )
+})
+
+test('extractArchive unpacks a tarball and strips its top level', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'czb-tar-'))
+  fs.mkdirSync(path.join(dir, 'src', 'pkg-1.0.0', 'lib'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'src', 'pkg-1.0.0', 'run'), 'binary\n')
+  fs.writeFileSync(path.join(dir, 'src', 'pkg-1.0.0', 'lib', 'a.txt'), 'a\n')
+  spawnSync('tar', ['-czf', path.join(dir, 'pkg.tar.gz'), '-C', path.join(dir, 'src'), 'pkg-1.0.0'])
+
+  const out = path.join(dir, 'out')
+  await extractArchive(path.join(dir, 'pkg.tar.gz'), out, { stripComponents: 1 })
+  assert.ok(fs.existsSync(path.join(out, 'run')), 'the top-level directory should be stripped')
+  assert.equal(fs.readFileSync(path.join(out, 'lib', 'a.txt'), 'utf8'), 'a\n')
 })
 
 test('the shipped Zig template is complete', () => {

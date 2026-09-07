@@ -85,7 +85,7 @@ in C++ with `node-addon-api`. The [examples](#examples) show both.
 | Node.js | 18.17 or newer (Bun and Yarn work too — they run the same CLI) |
 | Disk | ~150 MB in `~/.zig-build` for the toolchain |
 | Network | On the first build only, then never again |
-| `tar` | macOS and Linux only, where it is always present. Windows unpacks the toolchain with PowerShell |
+| `tar` | Always present on macOS and Linux. On Windows, the bundled `tar.exe` (Windows 10 1803+); older Windows unpacks with PowerShell |
 
 No compiler, no Python, no Visual Studio Build Tools.
 

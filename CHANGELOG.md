@@ -25,12 +25,27 @@ and a `build.zig` driven by hand with `-Dnode-lib=` stops recognising it.
 
 ### Fixed
 
-- **A Windows build no longer needs `tar` on `PATH`.** The Node header tarball
-  was the only `.tar.gz` this tool unpacked, and the extractor's Windows
-  fallback — PowerShell's `Expand-Archive` — only handles `.zip`. Without `tar`
-  the build stopped at `cannot extract …: no usable 'tar' was found on PATH`
-  before anything was compiled. Zig ships its Windows toolchain as a `.zip`, so
-  nothing Windows downloads needs `tar` any more.
+- **The first build on Windows failed in Git Bash and MSYS2.** Unpacking the
+  Zig toolchain went through whatever `tar` was on `PATH`, on the assumption
+  that this is the bsdtar Windows 10 1803 and later ship. In a Git Bash or
+  MSYS2 shell it is not: those put their own **GNU tar** first, and GNU tar
+  gets the Zig zip wrong twice over. It reads `C:\...` as the old `host:path`
+  rsh syntax and tries to open a network connection —
+
+  ```
+  tar: Cannot connect to C: resolve failed
+  'tar -xf C:\Users\…\zig-x86_64-windows-0.15.2.zip …' exited with code 128
+  ```
+
+  — and even with a path it accepts, it cannot read a zip at all. The extractor
+  now identifies which `tar` it found before trusting it with either: bsdtar is
+  used as before, and where `PATH` yields GNU tar the bsdtar in `System32` is
+  used instead, falling back to PowerShell's `Expand-Archive` on Windows older
+  than 1803. GNU tar keeps the tarballs on macOS and Linux, now with
+  `--force-local` on Windows paths.
+- **A Windows build needs one download less.** The Node header tarball was the
+  only `.tar.gz` this tool unpacked, and it is gone with the header download
+  below.
 
 ### Changed
 
