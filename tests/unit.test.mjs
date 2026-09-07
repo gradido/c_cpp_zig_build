@@ -302,9 +302,9 @@ test('a download with no terminal to draw on reports progress in the log', async
     `,
   )
 
-  // CI=1 stands in for "there is no terminal to draw on": without it the child
-  // would find the developer's own terminal through /dev/tty and paint the bar
-  // there, leaving this pipe empty — correct behaviour, useless as a fixture.
+  // CI=1 is what the tool reads as "nobody is watching this live", the same as
+  // turbo's own marker. Without it a developer running the suite in a terminal
+  // would get the repainting bar, and this pipe would see none of it.
   const { status, stdout } = spawnSync(process.execPath, [script], {
     encoding: 'utf8',
     env: { ...process.env, CI: '1' },
@@ -325,6 +325,19 @@ test('a download with no terminal to draw on reports progress in the log', async
   )
 })
 
+/**
+ * Backdates a lock file so its age is a fact rather than an accident.
+ *
+ * The alternative — a freshly written file and `staleAfterMs: 0` — leans on
+ * `Date.now() - stat.mtimeMs` coming out strictly positive, which a filesystem
+ * with second-granularity timestamps, or a clock that disagrees slightly with
+ * the one the kernel stamped it with, is free not to do.
+ */
+function backdate(lock, ms) {
+  const when = new Date(Date.now() - ms)
+  fs.utimesSync(lock, when, when)
+}
+
 test('a lock left behind by a dead process is taken over, not waited on', async () => {
   // `finally` does not run when a build is killed with Ctrl+C, so an
   // interrupted download leaves its lock. Waiting it out was a ten-minute hang
@@ -339,7 +352,7 @@ test('a lock left behind by a dead process is taken over, not waited on', async 
   assert.ok(!fs.existsSync(lock), 'the lock should be released afterwards')
 })
 
-test('a lock held by a living process is respected', async () => {
+test('a lock held by a living process is respected, however old it is', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'czb-lock-'))
   const lock = path.join(dir, '.zig.lock')
   fs.writeFileSync(lock, String(process.pid)) // alive by definition
@@ -349,19 +362,45 @@ test('a lock held by a living process is respected', async () => {
     /timed out waiting for lock/,
   )
   assert.ok(fs.existsSync(lock), "someone else's lock must not be deleted")
+
+  // Age must not override that. A first build on a slow link holds the lock for
+  // as long as the toolchain takes to arrive, which outlasts any age limit
+  // worth setting; taking it away would put two extractions in one directory.
+  backdate(lock, 5 * 60_000)
+  await assert.rejects(
+    () => withLock(lock, async () => 'ran', { timeoutMs: 400, staleAfterMs: 60_000 }),
+    /timed out waiting for lock/,
+  )
+  assert.ok(fs.existsSync(lock), 'an old lock whose owner is alive is still theirs')
 })
 
-test('an unreadable or ageing lock does not block forever either', async () => {
+test('a lock that names nobody is the one case age decides', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'czb-lock-'))
   const lock = path.join(dir, '.zig.lock')
 
   // Written by a build that died between creating the file and naming itself.
+  // There is nobody to ask whether it is still wanted, so it is waited out and
+  // then taken.
   fs.writeFileSync(lock, '')
-  assert.equal(await withLock(lock, async () => 'ran', { timeoutMs: 5000 }), 'ran')
+  backdate(lock, 5 * 60_000)
+  assert.equal(
+    await withLock(lock, async () => 'ran', { timeoutMs: 5000, staleAfterMs: 60_000 }),
+    'ran',
+  )
 
-  // Held by a live pid, but old enough that the pid has plausibly been reused.
-  fs.writeFileSync(lock, String(process.pid))
-  assert.equal(await withLock(lock, async () => 'ran', { timeoutMs: 5000, staleAfterMs: 0 }), 'ran')
+  fs.writeFileSync(lock, 'not a pid')
+  backdate(lock, 5 * 60_000)
+  assert.equal(
+    await withLock(lock, async () => 'ran', { timeoutMs: 5000, staleAfterMs: 60_000 }),
+    'ran',
+  )
+
+  // Fresh, and still nameless: waited on rather than taken.
+  fs.writeFileSync(lock, '')
+  await assert.rejects(
+    () => withLock(lock, async () => 'ran', { timeoutMs: 400, staleAfterMs: 60_000 }),
+    /timed out waiting for lock/,
+  )
 })
 
 test('the shipped Zig template is complete', () => {

@@ -42,13 +42,33 @@ const PER_WORKSPACE = [
  */
 const AT_ROOT = ['.turbo/cache']
 
-/** The workspace directories, read from package.json rather than hardcoded. */
-function workspaces() {
-  const { workspaces: patterns = [] } = JSON.parse(
+/**
+ * The globs declared in package.json, in either shape npm and Yarn accept: an
+ * array, or an object with them under `packages`.
+ *
+ * Anything else is refused before a single file is removed. A script whose job
+ * is deleting things should not guess at what it was pointed at — and the
+ * failure this replaces was `patterns is not iterable`, several frames deep.
+ */
+function workspacePatterns() {
+  const { workspaces: declared } = JSON.parse(
     fs.readFileSync(path.join(root, 'package.json'), 'utf8'),
   )
+  const patterns = Array.isArray(declared) ? declared : declared?.packages
+  if (!Array.isArray(patterns)) {
+    process.stderr.write(
+      'package.json declares no usable "workspaces": expected an array of globs, or an ' +
+        `object with a "packages" array, and found ${JSON.stringify(declared)}\n`,
+    )
+    process.exit(1)
+  }
+  return patterns
+}
+
+/** The workspace directories those globs expand to. */
+function workspaces() {
   const found = []
-  for (const pattern of patterns) {
+  for (const pattern of workspacePatterns()) {
     if (!pattern.endsWith('/*')) {
       found.push(pattern)
       continue
@@ -80,7 +100,11 @@ function remove(relative, absolute = path.join(root, relative)) {
   }
 }
 
-for (const workspace of workspaces()) {
+// Resolved before anything is removed, so a malformed manifest stops the run
+// rather than half-clearing it.
+const workspaceDirs = workspaces()
+
+for (const workspace of workspaceDirs) {
   for (const target of PER_WORKSPACE) {
     remove(path.join(workspace, target))
   }

@@ -126,11 +126,27 @@ which would silently move the toolchain cache back to the default without
 saying so. Anything the build tool reads has to be declared:
 
 ```json
-"globalPassThroughEnv": ["C_CPP_ZIG_BUILD_HOME", "C_CPP_ZIG_BUILD_PROGRESS", ...]
+"globalEnv": ["ZIG_EXE"],
+"globalPassThroughEnv": ["C_CPP_ZIG_BUILD_HOME", "ZIG_MIRROR", ...]
 ```
 
-`passThroughEnv` rather than `env`, because these change *where* things are
-found, not *what* is compiled: they should not be part of the cache key.
+Which list a variable goes in is the interesting part, and it is decided by one
+question: **does it change what gets compiled?**
+
+`ZIG_EXE` replaces the managed toolchain with a compiler of your own, so it
+does — a different Zig can emit different code, and a build made with one must
+not be served from the cache to a build asking for the other. Variables in
+`globalEnv` are hashed, so setting it produces a cache miss.
+
+`C_CPP_ZIG_BUILD_HOME` and `ZIG_MIRROR` only move *where* the same, checksum-
+verified toolchain is fetched from and cached. Hashing those would throw away
+everything already built for no reason, so they go in `globalPassThroughEnv`,
+which reaches the task without entering the cache key. `NO_COLOR` and
+`C_CPP_ZIG_BUILD_PROGRESS` are the same story: output, not artifacts.
+
+Both lists have per-task counterparts, `env` and `passThroughEnv`. The
+root-level form fits here because the toolchain is a property of the machine
+rather than of one package.
 
 **`inputs` are worth being explicit about.** By default turbo hashes every
 git-tracked file in the package. `build/`, `.zig-cache/` and `.zig-native/` are

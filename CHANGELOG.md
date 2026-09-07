@@ -68,11 +68,13 @@ and a `build.zig` driven by hand with `-Dnode-lib=` stops recognising it.
 
 ### Changed
 
-- **`node-api-headers` is the only source of Node-API headers.** It is a
-  dependency of this package, so it is always present, it is versioned by npm
-  rather than by whichever Node happens to be running, and nothing is
+- **`node-api-headers` is where the Node-API headers come from by default.**
+  It is a dependency of this package, so it is always present, it is versioned
+  by npm rather than by whichever Node happens to be running, and nothing is
   downloaded or unpacked to get at it. A first build is one download shorter,
-  and no build depends on nodejs.org being reachable.
+  and no build depends on nodejs.org being reachable. A project that needs a
+  different header set still points `--node-headers` at a directory of its own,
+  and that wins — see "Removed" below.
 - **Windows always builds its import library locally**, with `zig dlltool` from
   `node_api.def`. That was already the preferred route; now it is the only one.
   It is also the only route that can serve **Bun**, whose Node-API exports live
