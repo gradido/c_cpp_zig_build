@@ -47,6 +47,14 @@ and a `build.zig` driven by hand with `-Dnode-lib=` stops recognising it.
   only `.tar.gz` this tool unpacked, and it is gone with the header download
   below.
 
+- **A build interrupted with Ctrl+C no longer wedges the next one.** The
+  download lock was removed in a `finally`, which Ctrl+C does not run, so an
+  interrupted first build left its lock behind — and the next build then waited
+  on it for ten minutes with no output and no CPU, which reads as a hang rather
+  than as waiting. The lock now records its owner's pid and is taken over at
+  once when that process is gone, waiting is announced with the path to delete
+  if the answer is wrong, and SIGINT and SIGTERM release it on the way out.
+
 ### Changed
 
 - **`node-api-headers` is the only source of Node-API headers.** It is a
@@ -69,6 +77,28 @@ and a `build.zig` driven by hand with `-Dnode-lib=` stops recognising it.
 - **The first build says when it is unpacking.** The download's progress bar
   erases itself when it completes, and unpacking 50-90 MB took long enough that
   the silence after it read as a hang.
+- **The progress bar no longer depends on the mirror.** The archive size comes
+  from the Zig index, so a community mirror that sends no `Content-Length` —
+  or streams the archive chunked, where it cannot — still gets a bar instead of
+  a plain megabyte counter.
+- **The download bar behaves under turbo**, and under anything else that
+  captures a task's output. It is a live line that repaints while the download
+  runs and disappears when it ends — the same bar as a plain terminal run, not
+  a column of stale percentages left in the log.
+
+Under turbo or in CI it is five log lines instead, one per fifth of the
+  download. A repainting bar needs a terminal it can own, and there nothing
+  does: the supervisor writes its own lines whenever it pleases, a bar
+  repainting between them overwrites them, and its closing erase takes whatever
+  shared the line. Zig's own progress display reaches the same conclusion and
+  switches itself off when it is not in charge of the terminal.
+
+  The line form used to be a wall-clock throttle, which on a fast link gave two
+  lines for a 90 MB download, the first of them `0%`. Repainting is now
+  throttled to 80 ms with a fifth of a second of silence first, so a short
+  download never flashes a bar and a long one costs tens of writes rather than
+  thousands. `NO_COLOR`, or `C_CPP_ZIG_BUILD_PROGRESS=lines`, forces the line
+  form everywhere; `off` silences it.
 
 ### Removed
 

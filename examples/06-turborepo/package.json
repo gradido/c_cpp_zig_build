@@ -12,7 +12,7 @@
     "build:force": "turbo run build --force",
     "test": "turbo run test && node --test check-turbo-cache.mjs",
     "check": "node --test check-turbo-cache.mjs",
-    "clean": "turbo run clean && node -e \"require('node:fs').rmSync('.turbo',{recursive:true,force:true})\""
+    "clear": "node clear.mjs"
   },
   "devDependencies": {
     "turbo": "2.10.12"

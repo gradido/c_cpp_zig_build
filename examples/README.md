@@ -57,6 +57,8 @@ fetches nothing: its dependency is a local path.
 Example 6 is a workspace rather than a single project, so its `build` and
 `test` scripts run `turbo` instead of the build tool directly; the addon it
 contains is built the same way as every other example, two directories deeper.
+It also has `bun run clear`, which resets it — turbo's cache included — so the
+first build can be watched more than once.
 
 The first build of any of them downloads the Zig toolchain into `~/.zig-build`,
 which takes a minute; every build after that is fast.

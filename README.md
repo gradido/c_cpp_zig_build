@@ -623,6 +623,7 @@ Anything after `--` is passed to `zig build`, which is how
 | `ZIG_EXE` | use this Zig binary |
 | `ZIG_MIRROR` | try this Zig mirror first |
 | `NO_COLOR` | plain output |
+| `C_CPP_ZIG_BUILD_PROGRESS` | `lines` or `off` for the download progress |
 | `C_CPP_ZIG_BUILD_DEBUG` | print stack traces on failure |
 
 ### Which Node an addon runs on

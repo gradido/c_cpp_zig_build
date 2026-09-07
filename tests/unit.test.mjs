@@ -6,9 +6,10 @@ import path from 'node:path'
 import test from 'node:test'
 
 import { resolveConfig } from '../lib/config.js'
-import { chooseExtractor, extractArchive } from '../lib/download.js'
+import { chooseExtractor, extractArchive, withLock } from '../lib/download.js'
 import { toIdentifier } from '../lib/fsutil.js'
 import { detectHostTriple } from '../lib/host.js'
+import { progressTarget } from '../lib/log.js'
 import {
   resolveNodeAddonApi,
   resolveNodeApiHeaders,
@@ -182,6 +183,123 @@ test('extractArchive unpacks a tarball and strips its top level', async () => {
   await extractArchive(path.join(dir, 'pkg.tar.gz'), out, { stripComponents: 1 })
   assert.ok(fs.existsSync(path.join(out, 'run')), 'the top-level directory should be stripped')
   assert.equal(fs.readFileSync(path.join(out, 'lib', 'a.txt'), 'utf8'), 'a\n')
+})
+
+test('a supervised build gets lines, not a bar it cannot own', () => {
+  // turbo and CI write to the terminal line by line whenever they please. A bar
+  // repainting between those lines overwrites them, and its closing erase takes
+  // whatever shared the line. Zig's own progress display switches itself off in
+  // exactly this situation; this switches to lines.
+  assert.deepEqual(progressTarget({ stdout: { isTTY: true }, env: {} }), { repaint: true })
+
+  for (const env of [{ TURBO_HASH: 'b8f7' }, { CI: '1' }, { NO_COLOR: '1' }]) {
+    assert.deepEqual(progressTarget({ stdout: { isTTY: true }, env }), { repaint: false })
+  }
+  assert.deepEqual(progressTarget({ stdout: { isTTY: false }, env: {} }), { repaint: false })
+
+  assert.deepEqual(
+    progressTarget({ stdout: { isTTY: true }, env: { C_CPP_ZIG_BUILD_PROGRESS: 'lines' } }),
+    { repaint: false },
+  )
+  assert.deepEqual(
+    progressTarget({ stdout: { isTTY: true }, env: { C_CPP_ZIG_BUILD_PROGRESS: 'off' } }),
+    { repaint: false, silent: true },
+  )
+})
+
+test('a download with no terminal to draw on reports progress in the log', async () => {
+  // Run in a child process on purpose: what matters is what reaches a pipe,
+  // which is what turbo and CI see. Not every community mirror sends a
+  // Content-Length, and one that streams the archive chunked cannot, so the
+  // size from the Zig index is passed in and preferred over the header.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'czb-bar-'))
+  const script = path.join(dir, 'download.mjs')
+  const downloadUrl = new URL('../lib/download.js', import.meta.url).href
+  fs.writeFileSync(
+    script,
+    `import http from 'node:http'
+     import { downloadFile } from ${JSON.stringify(downloadUrl)}
+     const size = 512 * 1024
+     const body = Buffer.alloc(size, 7)
+     const server = http.createServer((_req, res) => {
+       res.writeHead(200, { 'Content-Type': 'application/octet-stream' }) // chunked: no length
+       let sent = 0
+       const tick = setInterval(() => {
+         if (sent >= size) { clearInterval(tick); res.end(); return }
+         res.write(body.subarray(sent, sent + size / 16))
+         sent += size / 16
+       }, 5)
+     })
+     await new Promise((r) => server.listen(0, '127.0.0.1', r))
+     const url = \`http://127.0.0.1:\${server.address().port}/zig.zip\`
+     await downloadFile(url, ${JSON.stringify(path.join(dir, 'a.zip'))}, {
+       label: 'zig.zip',
+       size,
+     })
+     server.close()
+    `,
+  )
+
+  // CI=1 stands in for "there is no terminal to draw on": without it the child
+  // would find the developer's own terminal through /dev/tty and paint the bar
+  // there, leaving this pipe empty — correct behaviour, useless as a fixture.
+  const { status, stdout } = spawnSync(process.execPath, [script], {
+    encoding: 'utf8',
+    env: { ...process.env, CI: '1' },
+  })
+  assert.equal(status, 0, stdout)
+
+  const percentages = [...stdout.matchAll(/zig\.zip \[[#-]{24}\] (\d+)%/g)].map((m) => Number(m[1]))
+  // A known size is what makes a bar possible at all; without one the output
+  // degrades to counting megabytes.
+  assert.ok(percentages.length >= 5, `expected progress lines, got:\n${stdout}`)
+  // One line per fifth keeps a supervised log short, and the last must reach
+  // 100%, not stop at 80% where the final chunk happens to land.
+  assert.equal(percentages.at(-1), 100, `progress should end at 100%:\n${stdout}`)
+  assert.deepEqual(
+    percentages,
+    [...percentages].sort((a, b) => a - b),
+    'progress should only ever move forwards',
+  )
+})
+
+test('a lock left behind by a dead process is taken over, not waited on', async () => {
+  // `finally` does not run when a build is killed with Ctrl+C, so an
+  // interrupted download leaves its lock. Waiting it out was a ten-minute hang
+  // with no output and no CPU — indistinguishable from a crash.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'czb-lock-'))
+  const lock = path.join(dir, '.zig.lock')
+  fs.writeFileSync(lock, '99999999') // a pid that cannot be running
+
+  const started = Date.now()
+  assert.equal(await withLock(lock, async () => 'ran', { timeoutMs: 5000 }), 'ran')
+  assert.ok(Date.now() - started < 1000, 'a dead owner should not be waited on at all')
+  assert.ok(!fs.existsSync(lock), 'the lock should be released afterwards')
+})
+
+test('a lock held by a living process is respected', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'czb-lock-'))
+  const lock = path.join(dir, '.zig.lock')
+  fs.writeFileSync(lock, String(process.pid)) // alive by definition
+
+  await assert.rejects(
+    () => withLock(lock, async () => 'ran', { timeoutMs: 400 }),
+    /timed out waiting for lock/,
+  )
+  assert.ok(fs.existsSync(lock), "someone else's lock must not be deleted")
+})
+
+test('an unreadable or ageing lock does not block forever either', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'czb-lock-'))
+  const lock = path.join(dir, '.zig.lock')
+
+  // Written by a build that died between creating the file and naming itself.
+  fs.writeFileSync(lock, '')
+  assert.equal(await withLock(lock, async () => 'ran', { timeoutMs: 5000 }), 'ran')
+
+  // Held by a live pid, but old enough that the pid has plausibly been reused.
+  fs.writeFileSync(lock, String(process.pid))
+  assert.equal(await withLock(lock, async () => 'ran', { timeoutMs: 5000, staleAfterMs: 0 }), 'ran')
 })
 
 test('the shipped Zig template is complete', () => {

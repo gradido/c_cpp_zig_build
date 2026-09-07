@@ -26,6 +26,28 @@ bun run test       # or: npm test
 `check-turbo-cache.mjs`, which is where the interesting part is. To run only
 that: `bun run check`.
 
+## Running it again
+
+A second `bun run build` is a cache hit, which is the point — but it also means
+you cannot watch the first one twice. `bun run clear` puts the workspace back
+to how it comes out of a clone:
+
+```bash
+bun run clear              # turbo's cache, and everything the build wrote
+bun run clear --toolchain  # and the downloaded Zig, to see that happen again
+```
+
+It removes derived output only, and needs neither turbo nor the build tool to
+be working — which matters, because the state you most want to reset is the one
+left by something that broke. `node_modules` stays: reinstalling turbo is not
+what makes a run cold. `--toolchain` reaches outside the workspace into
+`~/.zig-build`, which every project on the machine shares, so it takes a flag
+rather than being the default.
+
+[`clear.mjs`](clear.mjs) is worth a glance on its own: the list of paths in it
+is the complete inventory of what a turborepo build with a native addon leaves
+behind.
+
 ## The answer
 
 **Yes — provided `turbo.json` names the output directory.** A native addon is
@@ -74,11 +96,33 @@ upstream outputs were not restored, that step does not produce something stale
 — it fails outright, on every build, with an import error. Wiring a real
 consumer into the graph is worth more than any assertion about file paths.
 
+**The toolchain download reports as five log lines here, not as a bar.** Run
+directly, `c-cpp-zig-build` draws a bar that repaints in place and disappears
+when the download ends. Under turbo it cannot: a repainting bar needs a terminal
+it owns, and turbo writes its own prefixed lines there whenever it pleases — a
+bar repainting between them overwrites them, and the erase at the end takes
+whatever shared the line. Zig's own progress display comes to the same
+conclusion and switches itself off when it is not in charge of the terminal. So
+a supervised build gets one line per fifth of the download instead, which is
+correct whether you are watching live or reading the log afterwards.
+
 **`"ui": "stream"`.** turbo 2 defaults to an interactive TUI that repaints
 task panes in place. It is pleasant to watch and useless to read afterwards:
 compiler diagnostics scroll inside a pane and are gone. `stream` prefixes each
 line with the task name and leaves it in the scrollback, which is what you want
 the day a build breaks in CI.
+
+**turbo strips the environment.** By default a task sees only the variables
+turbo knows about — `NO_COLOR` gets through, `C_CPP_ZIG_BUILD_HOME` does not,
+which would silently move the toolchain cache back to the default without
+saying so. Anything the build tool reads has to be declared:
+
+```json
+"globalPassThroughEnv": ["C_CPP_ZIG_BUILD_HOME", "C_CPP_ZIG_BUILD_PROGRESS", ...]
+```
+
+`passThroughEnv` rather than `env`, because these change *where* things are
+found, not *what* is compiled: they should not be part of the cache key.
 
 **`inputs` are worth being explicit about.** By default turbo hashes every
 git-tracked file in the package. `build/`, `.zig-cache/` and `.zig-native/` are
