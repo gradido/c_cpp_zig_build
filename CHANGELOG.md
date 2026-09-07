@@ -66,6 +66,9 @@ and a `build.zig` driven by hand with `-Dnode-lib=` stops recognising it.
   headers.
 - `c-cpp-zig-build info` reports the header directory it would use and where it
   came from, as `node-api-headers <version>` or `configured`.
+- **The first build says when it is unpacking.** The download's progress bar
+  erases itself when it completes, and unpacking 50-90 MB took long enough that
+  the silence after it read as a hang.
 
 ### Removed
 
