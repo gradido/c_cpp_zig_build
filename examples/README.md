@@ -1,6 +1,6 @@
 # Examples
 
-Five complete, working projects. Each is buildable on its own and each teaches
+Six complete, working projects. Each is buildable on its own and each teaches
 one thing.
 
 | | Example | Language | Shows |
@@ -10,15 +10,26 @@ one thing.
 | 3 | [`03-library-cli-and-addon`](03-library-cli-and-addon) | C | one core behind an addon, a static library and a CLI; a `third_party/` file drop with its own flags |
 | 4 | [`04-zig-package-dependency`](04-zig-package-dependency) | C | linking zstd as a Zig package — nothing vendored |
 | 5 | [`05-dependency-reading-cwd`](05-dependency-reading-cwd) | C | a dependency whose `build.zig` reads the working directory, and why it still builds |
+| 6 | [`06-turborepo`](06-turborepo) | C | a turborepo workspace — declaring the addon as a task `output`, and what a cache hit does without it |
 
 ## Running them
 
-From a clone of this repository:
+Every example is runnable straight from a clone, with nothing installed:
 
 ```bash
-node ../../lib/cli.js build      # from inside an example directory
-node --test
+cd examples/01-minimal-c-addon
+bun run build       # or: npm run build
+bun run test        # or: npm test
 ```
+
+Each also has `bun run build:debug`, `bun run info` (what the build would use)
+and `bun run clean` (undo everything a build wrote).
+
+Their scripts call `node ../../lib/cli.js` rather than the `c-cpp-zig-build`
+command, on purpose: that is the copy of the build tool sitting two directories
+up, so an example always exercises this checkout and never a release from npm.
+Nothing has to be linked or installed for that to work. What you would write in
+a project of your own is below.
 
 Or all of them at once, from the repository root:
 
@@ -26,21 +37,46 @@ Or all of them at once, from the repository root:
 npm run test:examples
 ```
 
-Example 2 declares its own `node-addon-api`, so run `npm install` there first
-— it would build without it, using the copy that ships with the build tool,
-but the point of the example is to pin the version.
+Two of them install something first. Example 2 declares its own
+`node-addon-api` — it would build without it, using the copy that ships with
+the build tool, but the point of the example is to pin the version. Example 6
+needs `turbo` itself. In both, run `bun install` (or `npm install`) in that
+directory before the first build.
 
 Example 4 needs network access on its first build, to fetch zstd. Example 5
 fetches nothing: its dependency is a local path.
+
+Example 6 is a workspace rather than a single project, so its `build` and
+`test` scripts run `turbo` instead of the build tool directly; the addon it
+contains is built the same way as every other example, two directories deeper.
+
+The first build of any of them downloads the Zig toolchain into `~/.zig-build`,
+which takes a minute; every build after that is fast.
 
 ## Using one as a starting point
 
 Copy the directory, then:
 
 1. Change `name` in `package.json`.
-2. Change `.name` in `build.zig` and `build.zig.zon`, and the file name in
+2. Depend on the real package instead of the checkout:
+
+   ```bash
+   npm install --save-dev c-cpp-zig-build     # or: bun add -d c-cpp-zig-build
+   ```
+
+   and replace `node ../../lib/cli.js` in every script with
+   `c-cpp-zig-build`, which `npm run` / `bun run` then finds on the PATH:
+
+   ```json
+   "scripts": {
+     "build": "c-cpp-zig-build build",
+     "test": "node --test"
+   }
+   ```
+
+3. Change `.name` in `build.zig` and `build.zig.zon`, and the file name in
    `index.cjs` to match.
-3. Regenerate the fingerprint in `build.zig.zon`: delete the line, build once,
+4. Regenerate the fingerprint in `build.zig.zon`: delete the line, build once,
    and paste the value Zig prints.
 
 Or skip all of that and run `c-cpp-zig-build init` in an empty directory.

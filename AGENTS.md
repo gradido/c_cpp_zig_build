@@ -309,7 +309,8 @@ zig/                the Zig template, copied into projects verbatim
   src/sources.zig   recursive source collection
   src/napi.zig      Windows import libraries
   src/compile_commands.zig   the clangd database generator
-examples/           four complete projects, all of which must keep building
+examples/           six complete projects, all of which must keep building
+                    (06-turborepo is a workspace, driven by its own scripts)
 tests/              node --test
 scripts/            test-examples.mjs — builds and tests every example
 index.d.ts          hand-written types for the JavaScript API
@@ -370,10 +371,11 @@ Before proposing a change:
 ```bash
 npm run lint
 node --test tests/
-for e in examples/*/; do node lib/cli.js build --root "$e" || break; done
-(cd examples/01-minimal-c-addon && node --test)
-(cd examples/02-cpp-node-addon-api && node --test)
-(cd examples/03-library-cli-and-addon && node --test)
-(cd examples/04-zig-package-dependency && node --test)
+npm run test:examples   # every example, through its own build and test scripts
 node lib/cli.js zig -- fmt --check zig/build.zig zig/src/
 ```
+
+`test:examples` drives each example with `npm run build` and `npm test` rather
+than calling the CLI directly, so it runs what the READMEs tell a reader to
+type — and so `06-turborepo`, which is a workspace rather than a single
+project, needs no special case.

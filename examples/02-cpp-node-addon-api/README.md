@@ -18,13 +18,19 @@ Two things happen without being asked for:
   example declares its own anyway, which is the better habit: a declared
   version wins over the bundled one, and `napi.h` does change between majors.
 
-```bash
-npm install       # node-addon-api
-npm run build
-node --test
+From this directory:
 
-npx c-cpp-zig-build info   # says which copy of the headers was used
+```bash
+bun install        # node-addon-api; the one example that needs an install
+bun run build
+bun run test
+
+bun run info       # says which copy of the headers was used
 ```
+
+`npm install` / `npm run build` / `npm test` do the same. The scripts call
+`node ../../lib/cli.js`, so they build with the checkout this example lives in
+rather than a published release.
 
 ## Worth noticing
 

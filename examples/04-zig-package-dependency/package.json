@@ -5,7 +5,10 @@
   "description": "A Node addon over zstd, pulled in as a Zig package rather than vendored",
   "main": "./index.cjs",
   "scripts": {
-    "build": "c-cpp-zig-build",
+    "build": "node ../../lib/cli.js build",
+    "build:debug": "node ../../lib/cli.js build --debug",
+    "clean": "node ../../lib/cli.js clean",
+    "info": "node ../../lib/cli.js info",
     "test": "node --test"
   }
 }

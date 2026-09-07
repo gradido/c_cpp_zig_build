@@ -1,0 +1,31 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "stream",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "package.json",
+        "build.zig",
+        "build.zig.zon",
+        "src/**",
+        "napi/**",
+        "include/**",
+        "index.cjs",
+        "index.mjs",
+        "build.mjs"
+      ],
+      "outputs": ["build/**", "dist/**"]
+    },
+    "build:uncached": {
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["build"],
+      "outputs": []
+    },
+    "clean": {
+      "cache": false
+    }
+  }
+}

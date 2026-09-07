@@ -15,17 +15,22 @@ addon.linkDependency("zstd", "zstd");
 The dependency was added with one command:
 
 ```bash
-npx c-cpp-zig-build zig -- fetch --save \
+node ../../lib/cli.js zig -- fetch --save \
   https://github.com/allyourcodebase/zstd/archive/refs/tags/1.5.7-2.tar.gz
 ```
 
 That wrote the URL and its hash into `build.zig.zon`. `zig` here is the
 toolchain `c-cpp-zig-build` manages, so there is nothing to install first.
 
+From this directory, with nothing installed:
+
 ```bash
-npm run build     # fetches zstd on the first run, then never again
-node --test
+bun run build     # or: npm run build — fetches zstd on the first run, then never again
+bun run test      # or: npm test
 ```
+
+The scripts call `node ../../lib/cli.js`, so they use the checkout this
+example lives in rather than a published release.
 
 ## Worth noticing
 
@@ -53,7 +58,7 @@ addon.linkDependencyWith("libsodium", "sodium", .{ .static = true, .shared = fal
 package with this artifact's target and optimisation mode, so
 
 ```bash
-npx c-cpp-zig-build --target aarch64-macos
+node ../../lib/cli.js build --target aarch64-macos
 ```
 
 builds zstd for aarch64-macos too. Nothing about that is special-cased — it is

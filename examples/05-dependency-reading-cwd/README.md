@@ -25,10 +25,15 @@ writes in its own `build.zig` reaches the dependency to fix it.
 package with the package's own directory current, so this works whichever way
 the dependency spelled it.
 
+From this directory, with nothing installed:
+
 ```bash
-npm run build
-node --test
+bun run build      # or: npm run build
+bun run test       # or: npm test
 ```
+
+The scripts call `node ../../lib/cli.js`, so they use the checkout this
+example lives in rather than a published release.
 
 ## What is in here
 

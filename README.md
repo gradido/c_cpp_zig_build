@@ -803,13 +803,22 @@ Each directory is a complete, working project.
 | [`03-library-cli-and-addon`](examples/03-library-cli-and-addon) | one core library behind an addon, a static library and a CLI, plus a `third_party/` file drop with its own flags |
 | [`04-zig-package-dependency`](examples/04-zig-package-dependency) | linking zstd as a Zig package — nothing vendored |
 | [`05-dependency-reading-cwd`](examples/05-dependency-reading-cwd) | a dependency whose `build.zig` reads the working directory, and why it still builds |
+| [`06-turborepo`](examples/06-turborepo) | a turborepo workspace: declaring the addon as a task `output`, and what a cache hit does without it |
 
-To run them from a clone of this repository:
+To run them from a clone of this repository — nothing to install first:
 
 ```bash
-node lib/cli.js build --root examples/01-minimal-c-addon
-cd examples/01-minimal-c-addon && node --test
+cd examples/01-minimal-c-addon
+bun run build       # or: npm run build
+bun run test        # or: npm test
 ```
+
+Each example's scripts call `node ../../lib/cli.js`, so they build with the
+checkout rather than a release from npm. In a project of your own you would
+install `c-cpp-zig-build` and write `c-cpp-zig-build` in the script instead;
+[`examples/README.md`](examples/README.md#using-one-as-a-starting-point) has
+the two-line diff. All six, plus their tests, run at once with `npm run
+test:examples`.
 
 ---
 
@@ -1041,7 +1050,7 @@ has the full layout and ground rules.
 ```bash
 npm install
 npm test              # unit tests
-npm run test:examples # builds and tests all four examples
+npm run test:examples # builds and tests all six examples
 npm run lint          # Biome
 npm run fmt:check     # zig fmt, for the Zig template
 ```

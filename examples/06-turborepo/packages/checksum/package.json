@@ -1,0 +1,15 @@
+{
+  "name": "@turbo-example/checksum",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A Node-API addon built by c-cpp-zig-build inside a turborepo workspace",
+  "main": "./index.cjs",
+  "scripts": {
+    "build": "node ../../../../lib/cli.js build",
+    "build:debug": "node ../../../../lib/cli.js build --debug",
+    "build:uncached": "node ../../../../lib/cli.js build --out-dir .uncached-build",
+    "clean": "node ../../../../lib/cli.js clean",
+    "info": "node ../../../../lib/cli.js info",
+    "test": "node --test"
+  }
+}

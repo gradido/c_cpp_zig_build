@@ -1,0 +1,8 @@
+# turbo's local task cache and per-package log directories
+.turbo/
+
+# written by packages/app's build step
+dist/
+
+# the deliberately uncached output directory used by check-turbo-cache.mjs
+.uncached-build/
